@@ -1,0 +1,41 @@
+[project]
+name = "assay"
+version = "0.1.0"
+description = "Grill an idea into a bank-grade PRD, a spec, and a CSV of stories, features, and tickets"
+requires-python = ">=3.11"
+# Pinned to the versions the reference implementation was tested with (I14).
+# Upgrade deliberately, rerun everything including strict deserialization.
+dependencies = [
+  "langgraph==1.2.12",
+  "langgraph-checkpoint-postgres==3.1.2",
+  "langgraph-checkpoint-sqlite==3.1.1",
+  "langchain-core==1.6.6",
+  "langchain-openai==1.6.7",
+  "pydantic==2.13.5",
+  "psycopg[binary]==3.3.6",
+  "psycopg-pool==3.3.3",
+  "fastapi==0.142.2",
+  "uvicorn[standard]==0.54.0",
+  "jinja2==3.1.6",
+  "reportlab==4.4.10",
+  "pyyaml==6.0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "httpx==0.28.1"]
+
+[project.scripts]
+assay = "assay.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["assay*"]
+
+[tool.setuptools.package-data]
+assay = ["prompts/*.md", "prompts/reference/*.md", "templates/*.j2", "api/static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

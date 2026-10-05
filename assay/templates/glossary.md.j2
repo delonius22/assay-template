@@ -1,0 +1,9 @@
+# Glossary — {{ team }}
+
+## Language
+{% for t in terms | sort(attribute="term") %}
+**{{ t.term }}**:
+{{ t.definition }}
+{%- if t.avoid %}
+_Avoid_: {{ t.avoid | join(", ") }}{% endif %}
+{% endfor %}

@@ -1,0 +1,50 @@
+# Create these work items in the tracker — {{ s.title }}
+
+You are a work-tracking agent. Create every story, feature, and ticket in
+the CSV below in the team's tracker, using the tools available to you.
+
+## How to create them
+
+1. Work top-down: create each story, then its features under it, then each
+   feature's tickets under that feature. Keep every parent link.
+2. Start each item's title with its ID (S-01, F-01, T-001) so it can be
+   traced back to the PRD and the backlog.
+3. Copy the description, acceptance criteria, and Definition of Done
+   exactly. Do not reword, merge, split, or drop anything.
+4. Record "Depends On" as "is blocked by" links where the tracker supports
+   them; otherwise keep the IDs in the description.
+5. Create nothing that is not in the CSV. If an item cannot be created, skip
+   it and report why. Do not guess.
+
+## What you are creating
+
+Source: PRD {{ s.doc_id }} v{{ s.prd_version }}{% if s.approved_by %}, approved by {{ s.approved_by }}{% endif %}.
+{{ counts.stories | count("story", "stories") }}, {{ counts.features | count("feature") }}, {{ counts.tickets | count("ticket") }}.
+
+- A **story** is a business goal, written as "As a…, I want…, so that…".
+- A **feature** is a business capability that delivers part of a story.
+- A **ticket** is a buildable, testable slice of one feature. Tickets are
+  listed in build order: a ticket depends only on tickets listed before it.
+{% for st in core.stories %}
+### {{ st.id }} — {{ st.text }}
+{% for f in st.features %}
+- **{{ f.id }} {{ f.name }}:** {{ f.summary }} Tickets: {{ tickets_by_feature[f.id] | join(", ") or "none" }}.
+{%- endfor %}
+{% endfor %}
+## The CSV
+
+Columns: Level (Story, Feature, Ticket), ID, Parent ID, Title, Description,
+Acceptance Criteria, Definition of Done, Requirements, Spec Sections,
+Priority, Size, Type (Ticket, Spike, Enabler), Depends On, Unblocks, Sources.
+Rows are ordered story, then each of its features followed by that
+feature's tickets.
+
+```csv
+{{ csv_text }}
+```
+
+## Report back
+
+When finished, reply with one table: the CSV ID, the tracker key you
+created, and the tracker key of its parent. Then list anything you could
+not create, with the reason.

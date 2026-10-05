@@ -1,0 +1,20 @@
+# {{ heading }}
+
+{% for level, name in levels %}
+## {{ name }}
+{% for it in items if it.level == level %}
+### {{ it.id }} · {{ it.statement }}
+
+- **Category:** {{ it.category }}
+- **How verified:** {{ it.how_verified }}
+- **Evidence:** {{ it.evidence }}
+- **Verified by:** {{ it.verified_by }}
+- **Source:** {{ it.source }}
+{%- if it.mandated %}
+- **Mandated:** {{ it.mandated }}{% endif %}
+{%- if it.needs_team_confirmation %}
+- **Status:** Needs team confirmation{% endif %}
+{% else %}
+None.
+{% endfor %}
+{% endfor %}
