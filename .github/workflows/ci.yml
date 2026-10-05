@@ -2,24 +2,8 @@ name: ci
 on: [push, pull_request]
 
 jobs:
-  scaffold:
-    # Must always pass: structure, imports, shipped assets, and the plan chain.
+  python:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      - run: pip install -e ".[dev]"
-      - run: python scripts/validate_chain.py .
-      - run: pytest --collect-only -q
-      - run: LANGGRAPH_STRICT_MSGPACK=true pytest tests/green -q
-      - run: python -m assay check
-
-  contract:
-    # Red until the stubs are built; turns green ticket by ticket. Remove
-    # continue-on-error once every ticket is done.
-    runs-on: ubuntu-latest
-    continue-on-error: true
     services:
       postgres:
         image: postgres:16
@@ -29,9 +13,30 @@ jobs:
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      - run: pip install -e ".[dev]"
-      - run: LANGGRAPH_STRICT_MSGPACK=true pytest tests/contract -q
+      - uses: astral-sh/setup-uv@v6
+      - run: uv python install 3.14
+      - run: uv sync --python 3.14
+      - run: uv run ruff check . && uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run python .plan-conductor/check_skeleton.py . --lang python --python .venv/bin/python
+      - run: uv run python .plan-conductor/validate_chain.py .
+      # Stub tests are skipped; acceptance tests are xfail until built, then must pass.
+      - run: uv run pytest -q
         env:
+          LANGGRAPH_STRICT_MSGPACK: "true"
           ASSAY_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/assay_test
+
+  web:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: npm, cache-dependency-path: web/package-lock.json }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.14" }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: python ../.plan-conductor/check_skeleton.py . --lang typescript

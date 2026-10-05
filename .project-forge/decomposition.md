@@ -18,6 +18,8 @@
 - I14 — Dependencies are pinned.
 - I15 — Ticket list order is build order, and dependencies point only backward, so dependency cycles cannot exist.
 - I16 — Checkpointed custom types are registered with the serializer, so saved sessions still load after an upgrade.
+- I17 — The Python service accepts AG-UI calls only from the Node service; a browser can never reach it directly (ADR 0001).
+- I18 — A resume payload is validated against its pause's response schema before it reaches the graph.
 
 ## Assumptions (believed; could be false)
 
@@ -30,7 +32,8 @@
 ## Inherited conventions (true only because it is how it is done)
 
 - C1 — Outputs are markdown, PDF, and CSV, because people, agents, and trackers all read text.
-- C2 — A FastAPI web app with one HTML page.
+- C2 — A FastAPI web app with one HTML page. Superseded 2026-10-05 by C7 (ADR 0001).
+- C7 — A Next.js app with CopilotKit, talking to Python over AG-UI through the CopilotKit runtime.
 - C3 — LangGraph for the workflow; langchain-core for model calls.
 - C4 — Postgres for checkpoints and shared records; SQLite for local development.
 - C5 — The PRD PDF follows the Wells Fargo house style.
@@ -38,4 +41,4 @@
 
 ## Dependency structure
 
-Configuration → identity assignment and rules (pure leaves) → model layer (fakes first) → persistence → workflow nodes → wiring → web app. Every requirement in SPECS.md traces to these IDs.
+Configuration → identity assignment and rules (pure leaves) → model layer (fakes first) → persistence → workflow nodes → wiring → REST and AG-UI endpoints → Next.js app. Every requirement in SPECS.md traces to these IDs.

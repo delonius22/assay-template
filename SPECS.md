@@ -19,6 +19,13 @@ Append-only. ID · decision · stage · effect.
 - D7 · Stubs raise NotImplementedError naming their S-ID; the web app maps it to HTTP 501 · skeleton · The server runs from day one and shows what is missing.
 - D8 · Ticket list order is build order; dependencies point backward only · forge · No cycle detection needed (I15).
 - D9 · The repository's copy of the plan validator skips virtual environments · skeleton · A `.venv` inside the repo no longer produces false failures from third-party code.
+- D10 · Frontend is Next.js with CopilotKit and a Node runtime; Python accepts AG-UI calls only from it · grill · ADR 0001. C2 superseded by C7; S8.6 superseded by S10.
+- D11 · AG-UI is served by our own endpoint on the background runner, built on ag-ui-protocol core types; ag-ui-langgraph is not used · grill · S9. Keeps S8.2 background steps and runtime-context injection.
+- D12 · Every pause travels as a standard AG-UI interrupt (RUN_FINISHED with outcome "interrupt") carrying a response schema for its kind · grill · S9.2, S9.3, S10.6.
+- D13 · The questionnaire is a plain React page in the Next.js app · grill · S10.7.
+- D14 · The skeleton follows spec-skeleton: src layout, conceptual build steps, skipped per-module test stubs. Behavior tests are kept as an acceptance suite that expects NotImplementedError until built · skeleton · Replaces D7's run-from-day-one server: every function, including the app factory, is a stub.
+- D15 · The PDF renderer is vendored, and prompts and templates are content files; neither is stubbed · skeleton · Keeps D6 for assets that are not behavior to learn.
+- D16 · The web app installs with npm's legacy peer resolution, and every required peer (Vite, Zod, React) is pinned explicitly · skeleton · CopilotKit 1.77's channel packages declare an optional Vitest 4 peer that crashes npm's resolver beside Vitest 5. Remove when CopilotKit updates.
 
 ## Data shapes
 
@@ -46,6 +53,10 @@ All owned by the domain models module unless noted. Consumers cite the owner; th
 - Interrupt payload | owner: S5 contract | form: contract | open + fixed keys: kind ∈ question, dod_question, map_review, brief_fix, await_answers, approval, seams, ticket_review
 - Resume value | owner: S8.3 contract | form: contract | fixed keys: text, user, decision, brief
 - Store namespaces | owner: graph context | form: contract | ("team","dod"), ("team","glossary"), ("responses", slug, "r<N>"), ("calls", slug), ("sessions",)
+- AG-UI events | owner: ag-ui-protocol core types | form: protocol | RunStarted, StepStarted, StepFinished, StateSnapshot, RunFinished (outcome success or interrupt), RunError
+- Session view | owner: S9.4 contract | form: contract | fixed keys: slug, title, mode, pm, stage, files, agenda, q_round
+- Pause replies | owner: AG-UI endpoint module | form: model | AnswerReply (text), DecisionReply (decision, text), BriefReply (brief), ContinueReply (none); one per pause kind
+- Service headers | owner: S9.6 contract | form: contract | fixed keys: X-Assay-Service-Token, X-Forwarded-User
 - CSV columns | owner: S6.5 contract | form: contract | Level, ID, Parent ID, Title, Description, Acceptance Criteria, Definition of Done, Requirements, Spec Sections, Priority, Size, Type, Depends On, Unblocks, Sources
 
 ## Build order
@@ -65,7 +76,12 @@ All owned by the domain models module unless noted. Consumers cite the owner; th
 - S5.3, S5.4, S5.5, S5.6, S5.7, S5.8, S5.9, S5.10 — workflow nodes, in pipeline order
 - S5.11 — wiring (shipped complete; verify only)
 - S8.1, S8.2, S8.3, S8.4, S8.5 — web layer last
-- S8.6 — browser UI (shipped complete; verify only)
+- S9.1 — the runner publishes run progress; everything in S9 consumes it
+- S9.2, S9.3 — pure mapping and validation of pauses and replies
+- S9.4, S9.5 — translating runs into AG-UI events; starting sessions over AG-UI
+- S9.6, S9.7 — the trust boundary, then the streaming endpoint
+- S10.2, S10.1, S10.3 — web identity first, then the CopilotKit runtime route and the REST proxy
+- S10.4, S10.5, S10.6, S10.7 — pages and pause cards, last
 
 ## S1: Configuration
 **Traces to:** I9, A1 | **PRD:** Goal
@@ -169,4 +185,34 @@ All owned by the domain models module unless noted. Consumers cite the owner; th
 - [ ] S8.4 — Questionnaire endpoints: serve the current round; accept responses with known question IDs only; list who answered.
 - [ ] S8.5 — Downloads limited to the session's own generated files; usage totals with cache-hit rate.
   - Pitfall: building a file path from the URL without checking the session's file list allows path traversal.
-- [ ] S8.6 — Browser UI (shipped complete): every pause kind renders; non-approvers see a disabled Approve button.
+- [ ] S8.6 — Browser UI. Superseded by S10 (D10); deferred: the single-page UI is retired and removed.
+
+## S9: AG-UI endpoint
+**Traces to:** I1, I6, I7, I12, I17, I18, C7 | **PRD:** Success criteria 6
+**Done when:** an AG-UI client can start a session, watch each step, receive each pause as a standard interrupt, and resume it. | **Depends on:** S5, S8.2
+- [ ] S9.1 — The runner publishes each run's progress to subscribers of that session: step started and finished per node, the session view after each step, and how the run ended (pause, finish, or error).
+  - Pitfall: a subscriber that joins mid-run must still receive the run's end; publish the end even if nobody listened to the steps.
+- [ ] S9.2 — Map each pause to an AG-UI interrupt: a stable ID per pause, the pause kind as the reason, a short message, and the response schema of the reply model for that kind.
+  - Pitfall: an ID that changes when the same pause is re-sent breaks the client's resolve; derive it from the session and the pause position.
+- [ ] S9.3 — Validate a resume entry against its pause: known interrupt ID, a payload matching the pause's reply model; convert it to the resume value contract.
+  - Pitfall: trusting the payload because the client rendered a form from the schema skips I18; validate on the server.
+  - Input: resume entries, current pause, user. Work: match ID, validate payload. Output: resume value. Failure: 422 naming the problem. Test: a payload missing a required field is refused.
+- [ ] S9.4 — Translate one run into AG-UI events: run started, step started and finished, a state snapshot of the session view, then run finished with outcome "interrupt" (with the interrupt) or "success", or run error. A request for a waiting session with no resume re-sends the open interrupt without running anything.
+  - Pitfall: if the client disconnects mid-run, the run must continue in the background (S8.2); only the stream stops.
+- [ ] S9.5 — Start a session over AG-UI: a new thread whose forwarded properties carry title, mode, and brief creates the session with the same validation as S8.3.
+- [ ] S9.6 — Accept AG-UI calls only with the service token shared with the Node service and a user header; refuse others.
+  - Pitfall: comparing tokens with ordinary equality leaks timing; use a constant-time comparison.
+- [ ] S9.7 — The streaming endpoint: accept a run request and return its events encoded for the client's accepted content type.
+
+## S10: Web app
+**Traces to:** I8, I12, I17, I18, A4, C7 | **PRD:** Users, Success criteria 6
+**Done when:** a PM runs a whole session in the CopilotKit app and a developer answers a questionnaire in it. | **Depends on:** S9, S8.3, S8.4, S8.5
+- [ ] S10.1 — The CopilotKit runtime route registers Assay as an AG-UI agent pointing at the Python endpoint, attaching the service token and the signed-in user on every call.
+  - Pitfall: forwarding a user header supplied by the browser lets anyone impersonate anyone; only the SSO proxy's header counts.
+- [ ] S10.2 — Read the signed-in user from the SSO proxy header; refuse when missing, except for a development user set in configuration.
+- [ ] S10.3 — A REST proxy route forwards session, questionnaire, download, and usage calls to Python with the service token and the user.
+- [ ] S10.4 — The sessions page lists sessions and starts a new one (title, slug, mode, brief for mode 3).
+- [ ] S10.5 — The session page connects the agent for the session's thread, shows stage progress from snapshots and step events, and lists downloads.
+- [ ] S10.6 — Pause cards render each pause kind from the interrupt's reason and response schema and resolve it with a matching payload; non-approvers see Approve disabled.
+  - Pitfall: rendering forms only from the schema loses the domain wording; use the reason to pick a card and the schema to validate.
+- [ ] S10.7 — The questionnaire page lets a developer answer the current round and submit through the REST proxy.

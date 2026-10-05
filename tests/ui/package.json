@@ -1,6 +1,0 @@
-{
-  "name": "assay-ui-tests",
-  "private": true,
-  "scripts": { "test": "node ui.test.js" },
-  "devDependencies": { "jsdom": "^24.0.0" }
-}

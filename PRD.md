@@ -25,6 +25,8 @@ is saved so a session can stop and resume.
 - Model-based parsing of answer files. Developers answer in a web form.
 - Multi-worker deployment. One worker for the pilot (A3).
 - Copilot skills. The Python app replaces them.
+- Streaming model tokens to the browser. Agents return structured output; the browser shows steps and pauses, not token streams.
+- Browsers calling the Python service directly. All browser traffic goes through the Next.js service (ADR 0001).
 
 ## Users
 
@@ -40,6 +42,7 @@ is saved so a session can stop and resume.
 - A session stopped mid-way and resumed after an application restart continues at the same question, on Postgres.
 - A non-approver's approval is refused with HTTP 403.
 - With the real gateway, the session page reports a cache-hit rate above zero after the second grill turn (tests A2).
+- The browser shows each step as it starts and finishes and each pause the moment it occurs, with no polling, over AG-UI.
 
 ## Constraints
 
@@ -47,7 +50,8 @@ is saved so a session can stop and resume.
 - Postgres in production; identity from the bank's SSO proxy header.
 - The PRD PDF follows the Wells Fargo house style.
 - Hierarchy is story, then feature, then ticket.
-- Python 3.11+, LangGraph, no Pydantic AI.
+- Python 3.14, LangGraph, no Pydantic AI.
+- Frontend: Next.js with CopilotKit, talking to Python over AG-UI through the CopilotKit runtime (ADR 0001).
 
 ## Key assumptions
 

@@ -51,6 +51,14 @@ resume later.
 22. As an operator, I want prompt caching and a per-session cache-hit rate, so that I can see cost savings working.
 23. As a PM, I want my session saved after every step in Postgres, so that a restart or a week away loses nothing.
 
+### Epic D — Live web app (AG-UI and CopilotKit)
+24. As a PM, I want to see each step as it starts and finishes, so that I know Assay is working without refreshing.
+25. As a PM, I want each pause to appear the moment it happens as a card I can act on, so that sessions flow without waiting.
+26. As a security reviewer, I want browsers never to reach the Python service directly, so that model and data access stay behind one trusted boundary.
+27. As an approver, I want the Approve control disabled unless I am a named approver, so that the UI never invites an action the server will refuse.
+28. As a developer, I want the questionnaire in the same app with the same sign-in, so that answering is one link.
+29. As a PM, I want to close the browser mid-step and come back to the same place, so that nothing depends on my tab staying open.
+
 ## Implementation Decisions
 
 - Typed models are the source of truth; files are generated only (D2). Shapes per SPECS ## Data shapes.
@@ -58,7 +66,9 @@ resume later.
 - The model loop forces a tool call and returns rule problems to the model (S4.5, D3).
 - A model call and a human pause never share a node (I7, S5).
 - Ticket order is build order (D8, S3.6, S2.6).
-- Stubs raise NotImplementedError with their S-ID; the web app answers 501 (D7).
+- Stubs raise NotImplementedError with their S-ID (D14).
+- AG-UI is served by our own endpoint on the background runner; every pause is a standard AG-UI interrupt with a response schema (D11, D12, S9).
+- The Next.js service holds the UI and the CopilotKit runtime; Python accepts AG-UI only from it (D10, ADR 0001, S10).
 
 ## Testing Decisions
 

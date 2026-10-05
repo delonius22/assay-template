@@ -17,3 +17,9 @@ Theme: the real gateway and Postgres.
 Done when: tickets 10 and 11 are done; the backoff tests and the Postgres restart test pass.
 Members: 10, 11.
 Trace: PRD success criteria 3 and 5; S4.1, S4.3, S7.2.
+
+## Epic D — Live web app (AG-UI and CopilotKit)
+Theme: a PM and developers use Assay through the CopilotKit app, live, over AG-UI.
+Done when: tickets 12 to 15 are done; the AG-UI acceptance tests pass; a full session runs in the browser.
+Members (dependency order): 12, 13, 14, 15.
+Trace: PRD success criterion 6; S9, S10.
