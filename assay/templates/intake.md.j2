@@ -1,0 +1,19 @@
+# Intake — {{ s.title }}
+
+- **Slug:** {{ s.slug }}
+- **Mode:** {{ modes[s.mode] }}
+- **Product manager:** {{ s.pm }}
+- **Stage:** {{ s.stage }}
+{% if s.brief %}
+## Brief
+
+- **The ask:** {{ s.brief.ask }}
+- **The why:** {{ s.brief.why }}
+- **The outcome:** {{ s.brief.outcome }}
+- **Known steps:** {{ s.brief.known_steps or "—" }}
+- **Constraints:** {{ s.brief.constraints or "—" }}
+{% endif %}
+## Exit gate
+{% for g in gate %}
+- [{{ "x" if g.ok else " " }}] {{ g.label }}{% if not g.ok %} — {{ g.why }}{% endif %}
+{%- endfor %}

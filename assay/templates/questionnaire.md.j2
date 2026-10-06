@@ -1,0 +1,30 @@
+# Developer questionnaire — {{ s.title }} (round {{ round }})
+
+Answer in the browser at {{ form_url }}. This file is a printable copy.
+
+## What we are building
+
+- **The ask:** {{ s.brief.ask }}
+- **The why:** {{ s.brief.why }}
+- **The outcome:** {{ s.brief.outcome }}
+
+{{ q.summary }}
+{% for qid, item in pairs %}
+### {{ qid }} · {{ item.text }}
+
+- **Owner role:** {{ item.owner_role }} · **Priority:** {{ item.priority }}
+- **Why it matters:** {{ item.why_it_matters }}
+- **Proposed answer:** {{ item.proposed_answer }} ({{ item.reason }})
+{%- for fu in item.follow_ups %}
+- **Follow-up {{ qid }}{{ "abcdefgh"[loop.index0] }}** (only if {{ fu.condition }}): {{ fu.text }}
+{%- endfor %}
+{% endfor %}
+{%- if q.confirmations %}
+## Confirmations
+
+| ID | Statement | Source |
+|---|---|---|
+{%- for c in q.confirmations %}
+| K-{{ "%02d" | format(loop.index) }} | {{ c.statement | cell }} | {{ c.source | cell }} |
+{%- endfor %}
+{% endif %}

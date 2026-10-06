@@ -1,0 +1,90 @@
+# Technical spec — {{ s.title }}
+
+- **PRD:** {{ s.doc_id }} v{{ s.prd_version }}
+
+## 1. Summary
+
+{{ sp.summary }}
+{% if sp.current_state %}
+## 2. Current state
+
+{{ sp.current_state }}
+{% endif %}
+## 3. Design
+
+### 3.1 Modules
+
+| Module | New / Changed | Responsibility | Serves |
+|---|---|---|---|
+{%- for m in sp.modules %}
+| {{ m.name | cell }} | {{ m.change }} | {{ m.responsibility | cell }} | {{ m.serves | join(", ") }} |
+{%- endfor %}
+
+### 3.2 Interfaces and contracts
+
+{{ sp.interfaces }}
+
+### 3.3 Data
+
+{{ sp.data }}
+
+### 3.4 Key flows
+
+{{ sp.key_flows }}
+
+### 3.5 Integrations
+
+{{ sp.integrations }}
+
+## 4. Security, access, and audit
+
+{{ sp.security }}
+
+## 5. Non-functional design
+
+{{ sp.nfr_design }}
+
+## 6. Observability and operations
+
+{{ sp.observability }}
+
+## 7. Rollout and rollback
+
+{{ sp.rollout }}
+
+## 8. Testing decisions
+
+- **Seams:** {{ seams.seams | join("; ") }}
+- **Why:** {{ seams.rationale }}
+
+{{ sp.testing }}
+
+## 9. Decisions
+
+| Decision | Alternatives considered | Reason | ADR needed |
+|---|---|---|---|
+{%- for d in sp.decisions %}
+| {{ d.decision | cell }} | {{ d.alternatives | cell }} | {{ d.reason | cell }} | {{ "Yes" if d.adr_needed else "No" }} |
+{%- endfor %}
+
+## 10. Issues with the PRD
+{% for i in sp.prd_issues %}
+- {{ i }}
+{%- else %}
+None.
+{%- endfor %}
+
+## 11. Coverage
+
+| Requirement | Spec sections | Notes |
+|---|---|---|
+{%- for c in sp.coverage %}
+| {{ c.requirement }} | {{ c.sections | map("section_name") | join(", ") }} | {{ c.notes | cell }} |
+{%- endfor %}
+
+## 12. Open technical questions
+{% for q in sp.open_questions %}
+- {{ q }}
+{%- else %}
+None.
+{%- endfor %}

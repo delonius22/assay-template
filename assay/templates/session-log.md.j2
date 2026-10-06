@@ -1,0 +1,36 @@
+# Session log — {{ s.title }}
+{% if s.current_map %}
+## Current-state map
+
+- **Components:** {{ s.current_map.components | join(", ") }}
+- **Data flow:** {{ s.current_map.data_flow }}
+- **Data stores:** {{ s.current_map.data_stores | join(", ") }}
+- **Tests:** {{ s.current_map.tests }}
+- **Unknowns:** {{ s.current_map.unknowns | join("; ") or "none" }}
+{% endif %}
+## Entries
+{% for e in s.log %}
+### {{ e.id }} — {{ e.title }}{% if e.superseded_by %} (superseded by {{ e.superseded_by | join(", ") }}){% endif %}
+
+- **Area:** {{ e.area }}
+- **Source:** {{ e.source }}
+- **Detail:** {{ e.detail }}
+{%- if e.priority %}
+- **Priority:** {{ e.priority }}{% endif %}
+{%- if e.owner %}
+- **Owner:** {{ e.owner }}{% endif %}
+{%- if e.status %}
+- **Status:** {{ e.status }}{% endif %}
+{%- if e.scope_side %}
+- **Scope:** {{ e.scope_side }}{% endif %}
+{%- if e.journey_path %}
+- **Journey path:** {{ e.journey_path }}{% endif %}
+{%- if e.metric %}
+- **Measure:** {{ e.metric.measure }}, from {{ e.metric.baseline }} to {{ e.metric.target }} by {{ e.metric.by_when }}{% endif %}
+{%- if e.positions %}
+- **Positions:** {{ e.positions | join("; ") }}{% endif %}
+{% endfor %}
+## Answers given
+{% for t in s.transcript %}
+- **{{ t.user }}** ({{ t.at }}): {{ t.question }} → {{ t.answer | cell }}
+{%- endfor %}

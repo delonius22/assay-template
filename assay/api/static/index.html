@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assay</title>
+<style>
+:root {
+  --red: #D71E28; --red-dark: #B0151E; --gold: #FFCD11; --gold-tint: #FFF6D6;
+  --ink: #2A2522; --muted: #6B605B; --line: #E3DDD6; --wash: #F7F5F2; --white: #FFFFFF;
+  --ok: #2E7D4F;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink); background: var(--white); font-size: 16px; line-height: 1.5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: var(--red-dark); }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+header.top { background: var(--red); color: var(--white); display: flex; align-items: center;
+  justify-content: space-between; padding: 0 24px; height: 56px; border-bottom: 4px solid var(--gold); }
+header.top h1 { font-size: 20px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+header.top a { color: var(--white); text-decoration: none; }
+header.top .who { font-size: 14px; opacity: .9; }
+.shell { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 60px); }
+nav.sessions { border-right: 1px solid var(--line); background: var(--wash); padding: 20px 16px; }
+nav.sessions h2 { font-size: 15px; margin: 0 0 12px; color: var(--muted); font-weight: 600; }
+nav.sessions ul { list-style: none; margin: 0; padding: 0; }
+nav.sessions li a { display: block; padding: 10px 12px; border-radius: 6px; text-decoration: none; color: var(--ink); }
+nav.sessions li a[aria-current="page"] { background: var(--white); box-shadow: inset 3px 0 0 var(--red); }
+nav.sessions li small { display: block; color: var(--muted); font-size: 13px; }
+main { padding: 32px 48px 64px; max-width: 920px; }
+.btn { font: inherit; font-size: 15px; border-radius: 6px; padding: 10px 18px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--white); color: var(--ink); }
+.btn.primary { background: var(--red); border-color: var(--red); color: var(--white); font-weight: 600; }
+.btn.primary:hover { background: var(--red-dark); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn + .btn { margin-left: 8px; }
+.new { width: 100%; margin-bottom: 20px; }
+.meta { color: var(--muted); font-size: 14px; margin: 4px 0 24px; }
+ol.stages { display: flex; gap: 0; list-style: none; padding: 0; margin: 0 0 32px; counter-reset: st; flex-wrap: wrap; }
+ol.stages li { counter-increment: st; padding: 6px 16px 8px 0; margin-right: 16px; color: var(--muted); font-size: 14px;
+  border-bottom: 3px solid transparent; }
+ol.stages li::before { content: counter(st) ". "; }
+ol.stages li.done { color: var(--ink); }
+ol.stages li.now { color: var(--ink); font-weight: 600; border-bottom-color: var(--gold); }
+.question { font-size: 28px; line-height: 1.3; font-weight: 600; margin: 8px 0 20px; max-width: 34ch; }
+.area { color: var(--muted); font-size: 14px; }
+.recommend { border-left: 3px solid var(--line); padding: 4px 0 4px 16px; margin: 0 0 20px; }
+.recommend p { margin: 0; }
+.recommend .why { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.challenge { background: var(--gold-tint); border-left: 4px solid var(--gold); padding: 12px 16px; margin-bottom: 24px; }
+.error { color: var(--red-dark); font-weight: 600; }
+textarea, input[type=text], select { font: inherit; width: 100%; padding: 10px 12px; border: 1px solid #CFC7BF;
+  border-radius: 6px; background: var(--white); }
+textarea { min-height: 140px; resize: vertical; }
+label { display: block; font-weight: 600; margin: 16px 0 6px; }
+.hint { color: var(--muted); font-size: 14px; font-weight: 400; }
+.actions { margin-top: 16px; }
+.working { font-size: 20px; color: var(--muted); }
+.files { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 20px; }
+.files h3, .section h3 { font-size: 16px; margin: 0 0 10px; }
+.files ul { padding-left: 20px; margin: 0; }
+.deliverable { font-weight: 600; }
+.usage { color: var(--muted); font-size: 14px; margin-top: 12px; }
+fieldset { border: none; padding: 0; margin: 0; }
+.modes label { font-weight: 400; display: flex; gap: 10px; align-items: baseline; margin: 8px 0; }
+.modes b { display: block; }
+.q { border-top: 1px solid var(--line); padding: 20px 0; }
+.q h3 { font-size: 18px; margin: 0 0 6px; }
+.choices { display: flex; gap: 20px; margin: 10px 0; flex-wrap: wrap; }
+.choices label { font-weight: 400; margin: 0; display: flex; gap: 6px; align-items: center; }
+details { margin-top: 10px; }
+.map dt { font-weight: 600; margin-top: 10px; }
+.map dd { margin: 2px 0 0; }
+@media (max-width: 760px) {
+  .shell { grid-template-columns: 1fr; }
+  nav.sessions { border-right: none; border-bottom: 1px solid var(--line); }
+  main { padding: 24px 20px 48px; }
+  .question { font-size: 23px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1><a href="/">Assay</a></h1>
+  <span class="who" id="who"></span>
+</header>
+<div class="shell">
+  <nav class="sessions" aria-label="Sessions">
+    <button class="btn primary new" onclick="go('/')">Start a session</button>
+    <h2>Sessions</h2>
+    <ul id="list"><li><small>Loading…</small></li></ul>
+  </nav>
+  <main id="main" aria-live="polite"></main>
+</div>
+<script>
+const STAGES = ["Intake", "Definition of Done", "PRD", "Spec", "Tickets"];
+const MODES = {
+  1: ["Greenfield", "Only the need is known. Live grilling, one question at a time."],
+  2: ["Existing system", "Something is broken or must change. The code is mapped first."],
+  3: ["Brief and questionnaire", "You have the ask, the why, and the outcome. Developers answer a form."]};
+let me = {}, timer = null;
+
+const $ = (sel) => document.querySelector(sel);
+const plural = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function api(path, opts = {}) {
+  const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts});
+  const body = await r.json().catch(() => ({}));
+  if (r.status === 501) throw new Error(`Not built yet: ${body.detail}. See the matching ticket.`);
+  if (!r.ok) throw new Error(body.detail || `Request failed (${r.status})`);
+  return body;
+}
+function go(path) { history.pushState({}, "", path); route(); }
+window.onpopstate = route;
+
+async function loadList(current) {
+  const rows = await api("/api/sessions");
+  $("#list").innerHTML = rows.length ? rows.map(r => `
+    <li><a href="/s/${esc(r.slug)}" ${r.slug === current ? 'aria-current="page"' : ""}
+      onclick="event.preventDefault(); go('/s/${esc(r.slug)}')">${esc(r.title)}
+      <small>${esc(r.stage || "")}, ${esc(statusWord(r.status))}</small></a></li>`).join("")
+    : "<li><small>No sessions yet.</small></li>";
+}
+function statusWord(s) {
+  return {waiting: "waiting for you", working: "working", done: "finished", error: "needs a retry",
+          stopped: "stopped, retry to continue"}[s] || s;
+}
+
+async function route() {
+  clearTimeout(timer);
+  const [, kind, slug] = location.pathname.split("/");
+  await loadList(slug).catch(() => {});
+  if (kind === "s" && slug) return showSession(slug);
+  if (kind === "q" && slug) return showForm(slug);
+  showNew();
+}
+
+// ---------------------------------------------------------------- new session
+function showNew() {
+  const warn = me.missing_config?.length ? `<p class="error">Set before starting: ${esc(me.missing_config.join(", "))}.</p>` : "";
+  $("#main").innerHTML = `
+    <h2>Start a session</h2>${warn}
+    <form id="new">
+      <label for="title">What are you building or changing?</label>
+      <input type="text" id="title" required minlength="3" placeholder="Low-balance alerts">
+      <label for="slug">Short name <span class="hint">lowercase letters, digits, hyphens</span></label>
+      <input type="text" id="slug" required pattern="[a-z0-9][a-z0-9-]{2,39}" placeholder="low-balance-alerts">
+      <fieldset class="modes"><label style="font-weight:600">How much is already known?</label>
+        ${[1,2,3].map(m => `<label><input type="radio" name="mode" value="${m}" ${m===1?"checked":""}>
+          <span><b>${MODES[m][0]}</b><span class="hint">${MODES[m][1]}</span></span></label>`).join("")}
+      </fieldset>
+      <div id="brief" hidden>
+        <label for="ask">The ask</label><textarea id="ask" style="min-height:70px"></textarea>
+        <label for="why">The why</label><textarea id="why" style="min-height:70px"></textarea>
+        <label for="outcome">The outcome <span class="hint">a measure, a target, and a date</span></label>
+        <textarea id="outcome" style="min-height:70px"></textarea>
+        <label for="steps">Known steps <span class="hint">optional</span></label><textarea id="steps" style="min-height:70px"></textarea>
+        <label for="constraints">Constraints <span class="hint">optional</span></label><textarea id="constraints" style="min-height:70px"></textarea>
+      </div>
+      <p id="err" class="error"></p>
+      <div class="actions"><button class="btn primary">Start session</button></div>
+    </form>`;
+  $("#title").oninput = () => { if (!$("#slug").dataset.touched) $("#slug").value =
+    $("#title").value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40); };
+  $("#slug").oninput = () => $("#slug").dataset.touched = "1";
+  document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = () =>
+    $("#brief").hidden = !["2","3"].includes(document.querySelector("input[name=mode]:checked").value));
+  $("#new").onsubmit = async (e) => {
+    e.preventDefault();
+    const mode = +document.querySelector("input[name=mode]:checked").value;
+    const brief = {ask: $("#ask").value, why: $("#why").value, outcome: $("#outcome").value,
+                   known_steps: $("#steps").value, constraints: $("#constraints").value};
+    const hasBrief = brief.ask && brief.why && brief.outcome;
+    try {
+      await api("/api/sessions", {method: "POST", body: JSON.stringify(
+        {slug: $("#slug").value, title: $("#title").value, mode, brief: hasBrief ? brief : null})});
+      go(`/s/${$("#slug").value}`);
+    } catch (err) { $("#err").textContent = err.message; }
+  };
+}
+
+// ---------------------------------------------------------------- one session
+async function showSession(slug) {
+  let st;
+  try { st = await api(`/api/sessions/${slug}`); }
+  catch (err) { $("#main").innerHTML = `<p class="error">${esc(err.message)}</p>`; return; }
+  const stageIdx = st.stage === "PRD review" ? 2 : st.stage === "Done" ? 5 : STAGES.indexOf(st.stage);
+  $("#main").innerHTML = `
+    <h2 style="margin:0">${esc(st.title)}</h2>
+    <p class="meta">${esc(MODES[st.mode][0])}. Product manager: ${esc(st.pm)}.</p>
+    <ol class="stages">${STAGES.map((s, i) =>
+      `<li class="${i < stageIdx ? "done" : i === stageIdx ? "now" : ""}">${s}</li>`).join("")}</ol>
+    <section id="pane"></section>
+    <section class="files" id="files"></section>`;
+  renderPane(slug, st);
+  renderFiles(slug, st);
+  if (st.status === "working") timer = setTimeout(() => showSession(slug), 2000);
+}
+
+function renderPane(slug, st) {
+  const pane = $("#pane");
+  if (st.status === "working") { pane.innerHTML = `<p class="working">Working on the next step. This page updates by itself.</p>`; return; }
+  if (st.status === "error" || st.status === "stopped") {
+    pane.innerHTML = `<p class="error">${st.status === "error" ? "The last step failed." : "The last step was interrupted."}</p>
+      ${st.error ? `<p>${esc(st.error)}</p>` : ""}<p>Everything up to the last completed step is saved.</p>
+      <button class="btn primary" id="retry">Retry from the last saved step</button>`;
+    $("#retry").onclick = () => send(slug, null, "retry");
+    return;
+  }
+  if (st.status === "done") {
+    pane.innerHTML = `<h3 style="font-size:24px;margin:0 0 8px">Stories, features, and tickets are ready.</h3>
+      <p>Download <b>tickets.csv</b> and give <b>agent-prompt.md</b> to the agent that creates the tickets.
+      The prompt already contains the CSV.</p>`;
+    return;
+  }
+  const p = st.pending || {};
+  const challenge = p.challenge ? `<div class="challenge">${esc(p.challenge)}</div>` : "";
+  if (p.kind === "question" || p.kind === "dod_question") {
+    pane.innerHTML = `${challenge}
+      <span class="area">${p.kind === "dod_question" ? "Definition of Done" : esc(p.area)}</span>
+      <p class="question">${esc(p.question)}</p>
+      <div class="recommend"><p><b>Recommended:</b> ${esc(p.recommended)}</p><p class="why">${esc(p.reason)}</p></div>
+      <label for="ans">Your answer <span class="hint">or paste what the developers said; it is recorded as given</span></label>
+      <textarea id="ans"></textarea>
+      <div class="actions"><button class="btn" id="use">Use the recommended answer</button>
+      <button class="btn primary" id="send">Send answer</button></div>`;
+    $("#use").onclick = () => { $("#ans").value = p.recommended; $("#ans").focus(); };
+    $("#send").onclick = () => send(slug, {text: $("#ans").value});
+    $("#ans").focus();
+  } else if (p.kind === "map_review") {
+    const m = p.map;
+    pane.innerHTML = `<p class="question">Is this how the system works today?</p>
+      <dl class="map"><dt>Components</dt><dd>${esc(m.components.join(", "))}</dd>
+      <dt>Data flow</dt><dd>${esc(m.data_flow)}</dd><dt>Data stores</dt><dd>${esc(m.data_stores.join(", "))}</dd>
+      <dt>Tests</dt><dd>${esc(m.tests)}</dd><dt>Not settled by the code</dt><dd>${esc(m.unknowns.join("; ") || "Nothing")}</dd></dl>
+      <label for="ans">Corrections from the developers</label><textarea id="ans"></textarea>
+      <div class="actions"><button class="btn" id="ok">The map is correct</button>
+      <button class="btn primary" id="send">Send corrections</button></div>`;
+    $("#ok").onclick = () => send(slug, {text: "ok"});
+    $("#send").onclick = () => send(slug, {text: $("#ans").value});
+  } else if (p.kind === "brief_fix") {
+    const b = p.brief;
+    pane.innerHTML = `<p class="question">The brief needs work before developers see it.</p>
+      <ul>${p.issues.map(i => `<li>${esc(i)}</li>`).join("")}</ul>
+      ${["ask","why","outcome","known_steps","constraints"].map(k => `<label for="b-${k}">${k.replace("_"," ")}</label>
+        <textarea id="b-${k}" style="min-height:70px">${esc(b[k])}</textarea>`).join("")}
+      <div class="actions"><button class="btn primary" id="send">Save the brief</button></div>`;
+    $("#send").onclick = () => send(slug, {brief: Object.fromEntries(
+      ["ask","why","outcome","known_steps","constraints"].map(k => [k, $(`#b-${k}`).value]))});
+  } else if (p.kind === "await_answers") {
+    const link = `${location.origin}${p.form}`;
+    pane.innerHTML = `<p class="question">Waiting for developers to answer round ${p.round}.</p>
+      ${p.note ? `<p class="error">${esc(p.note)}</p>` : ""}
+      <p>Send this link to each developer: <a href="${esc(p.form)}">${esc(link)}</a>
+      <button class="btn" id="copy">Copy link</button></p>
+      <div class="section"><h3>Answers received</h3><ul id="who-answered"><li>Loading…</li></ul></div>
+      <div class="actions"><button class="btn primary" id="send">Continue with these answers</button></div>`;
+    $("#copy").onclick = () => navigator.clipboard.writeText(link);
+    api(`/api/sessions/${slug}/responses`).then(rs => $("#who-answered").innerHTML = rs.length
+      ? rs.map(r => `<li>${esc(r.respondent)}, ${esc(r.role)}</li>`).join("") : "<li>None yet.</li>");
+    $("#send").onclick = () => send(slug, {text: "continue"});
+  } else if (p.kind === "approval") {
+    pane.innerHTML = `<p class="question">Review PRD version ${esc(p.version)}.</p>
+      <p><a href="/api/sessions/${slug}/files/prd.pdf" target="_blank">Open the PRD (PDF)</a></p>
+      ${p.error ? `<p class="error">${esc(p.error)}</p>` : ""}
+      <label for="ans">Changes needed <span class="hint">leave empty to approve</span></label><textarea id="ans"></textarea>
+      <div class="actions"><button class="btn primary" id="approve" ${me.approver ? "" : "disabled"}>Approve the PRD</button>
+      <button class="btn" id="changes">Request changes</button></div>
+      ${me.approver ? "" : `<p class="hint">Only a named approver can approve. You can still request changes.</p>`}`;
+    $("#approve").onclick = () => send(slug, {decision: "approve"});
+    $("#changes").onclick = () => send(slug, {decision: "changes", text: $("#ans").value});
+  } else if (p.kind === "seams") {
+    pane.innerHTML = `<p class="question">Confirm the test seams with the developers.</p>
+      <ul>${p.seams.seams.map(s => `<li>${esc(s)}</li>`).join("")}</ul><p class="why">${esc(p.seams.rationale)}</p>
+      <label for="ans">Corrections</label><textarea id="ans"></textarea>
+      <div class="actions"><button class="btn primary" id="approve">These seams are right</button>
+      <button class="btn" id="changes">Send corrections</button></div>`;
+    $("#approve").onclick = () => send(slug, {decision: "approve"});
+    $("#changes").onclick = () => send(slug, {decision: "changes", text: $("#ans").value});
+  } else if (p.kind === "ticket_review") {
+    pane.innerHTML = `<p class="question">Review ${plural(p.tickets.length, "ticket")} before export.</p>
+      <ol>${p.tickets.map(t => `<li><b>${esc(t.id)}</b> ${esc(t.title)}
+        <span class="hint">${esc(t.feature_id)}, ${esc(t.type)}, size ${esc(t.size)}${t.depends_on_ids.length
+          ? `, after ${esc(t.depends_on_ids.join(", "))}` : ""}</span></li>`).join("")}</ol>
+      ${p.uncovered.length ? `<p><b>Not covered:</b> ${p.uncovered.map(u => `${esc(u.id)} (${esc(u.reason)})`).join("; ")}</p>` : ""}
+      <label for="ans">Changes needed <span class="hint">leave empty to export</span></label><textarea id="ans"></textarea>
+      <div class="actions"><button class="btn primary" id="approve">Export these tickets</button>
+      <button class="btn" id="changes">Request changes</button></div>`;
+    $("#approve").onclick = () => send(slug, {decision: "approve"});
+    $("#changes").onclick = () => send(slug, {decision: "changes", text: $("#ans").value});
+  } else {
+    pane.innerHTML = `<p>Nothing is waiting.</p>`;
+  }
+}
+
+async function send(slug, body, action = "reply") {
+  try {
+    await api(`/api/sessions/${slug}/${action}`, {method: "POST", body: JSON.stringify(body || {})});
+  } catch (err) { alert(err.message); }
+  showSession(slug);
+}
+
+async function renderFiles(slug, st) {
+  const key = ["tickets.csv", "agent-prompt.md"];
+  const files = [...st.files].sort((a, b) => key.includes(b) - key.includes(a));
+  const usage = await api(`/api/sessions/${slug}/usage`).catch(() => null);
+  const t = usage?.total;
+  $("#files").innerHTML = `<h3>Files</h3>${files.length ? `<ul>${files.map(f =>
+    `<li class="${key.includes(f) ? "deliverable" : ""}"><a href="/api/sessions/${slug}/files/${esc(f)}">${esc(f)}</a></li>`).join("")}</ul>`
+    : "<p class='hint'>Nothing generated yet.</p>"}
+    ${t && t.calls ? `<p class="usage">${plural(t.calls, "model call")}. ${Math.round(t.cache_hit_rate * 100)}% of input
+      tokens served from cache. ${plural(t.transient_retries, "gateway retry", "gateway retries")}.
+      ${plural(t.rejections, "output")} rejected and fixed.</p>` : ""}`;
+}
+
+// ---------------------------------------------------------------- developer questionnaire
+async function showForm(slug) {
+  let q;
+  try { q = await api(`/api/sessions/${slug}/questionnaire`); }
+  catch (err) { $("#main").innerHTML = `<p class="error">${esc(err.message)}</p>`; return; }
+  const choice = (id) => `<div class="choices" role="radiogroup" aria-label="Your response">
+    ${["Confirm","Correct","Don't know"].map(c => `<label><input type="radio" name="r-${id}" value="${c}">${c}</label>`).join("")}</div>`;
+  $("#main").innerHTML = `
+    <h2 style="margin:0">${esc(q.title)}</h2>
+    <p class="meta">Developer questionnaire, round ${q.round}. Answering as ${esc(me.user)}.</p>
+    ${q.brief ? `<p><b>The ask:</b> ${esc(q.brief.ask)}<br><b>The why:</b> ${esc(q.brief.why)}<br><b>The outcome:</b> ${esc(q.brief.outcome)}</p>` : ""}
+    <p>Each question has a proposed answer. Confirm it if it is right; correct it if not; say who would know if you don't.</p>
+    <label for="role">Your role</label><input type="text" id="role" placeholder="Lead Developer">
+    <form id="qf">${q.questions.map(x => `
+      <div class="q"><h3>${esc(x.id)}: ${esc(x.text)}</h3>
+        <p class="hint">${esc(x.priority)}. ${esc(x.why_it_matters)}</p>
+        <p><b>Proposed:</b> ${esc(x.proposed_answer)} <span class="hint">${esc(x.reason)}</span></p>
+        ${choice(x.id)}<textarea id="t-${x.id}" style="min-height:70px" aria-label="Correction or detail for ${esc(x.id)}"></textarea>
+        ${x.follow_ups.map(f => `<details><summary>${esc(f.id)}: answer only if ${esc(f.condition)}</summary>
+          <p>${esc(f.text)}</p><textarea id="t-${f.id}" style="min-height:60px"></textarea></details>`).join("")}
+      </div>`).join("")}
+      ${q.confirmations.length ? `<h3>Confirmations from the code</h3>${q.confirmations.map(c => `
+        <div class="q"><p><b>${esc(c.id)}:</b> ${esc(c.statement)} <span class="hint">${esc(c.source)}</span></p>
+        ${choice(c.id)}<textarea id="t-${c.id}" style="min-height:60px"></textarea></div>`).join("")}` : ""}
+      <label for="comments">Anything we did not ask?</label><textarea id="comments" style="min-height:80px"></textarea>
+      <p id="err" class="error"></p>
+      <div class="actions"><button class="btn primary">Submit my answers</button></div>
+    </form>`;
+  $("#qf").onsubmit = async (e) => {
+    e.preventDefault();
+    const answers = [];
+    for (const x of [...q.questions, ...q.confirmations]) {
+      const picked = document.querySelector(`input[name="r-${x.id}"]:checked`);
+      answers.push({question_id: x.id, response: picked ? picked.value : "No answer", text: $(`#t-${x.id}`).value});
+      for (const f of (x.follow_ups || [])) if ($(`#t-${f.id}`).value.trim())
+        answers.push({question_id: f.id, response: "Correct", text: $(`#t-${f.id}`).value});
+    }
+    try {
+      await api(`/api/sessions/${slug}/responses`, {method: "POST",
+        body: JSON.stringify({role: $("#role").value || "Developer", answers, comments: $("#comments").value})});
+      $("#main").innerHTML = `<p class="question">Thank you. Your answers are saved.</p>
+        <p>You can submit again to replace them until the PM continues.</p>`;
+    } catch (err) { $("#err").textContent = err.message; }
+  };
+}
+
+api("/api/me").then(m => { me = m; $("#who").textContent = m.user; route(); })
+  .catch(err => { $("#main").innerHTML = `<p class="error">${esc(err.message)}</p>`; });
+</script>
+</body>
+</html>

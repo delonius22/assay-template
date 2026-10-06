@@ -18,5 +18,5 @@
 - I7: a model call and a human pause never share a node.
 - I12: request bodies and slugs are validated at the boundary.
 - I16: checkpointed types are registered with the serializer.
-- Failure mode: every tool call in a model message needs a tool-result reply.
-- Failure mode: an exception inside a run must release the session lock.
+
+- I18: every failure mode is logged with context.
