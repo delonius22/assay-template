@@ -45,7 +45,38 @@ def dod_think(s: AssayState, runtime: Runtime[AppContext]):
        return `update | {"dod_phase": "done", "dod_transcript": [], "files": files(s, name)}`.
        Expected outcome: the team standard is shared; additions belong to this initiative.
     """
-    raise NotImplementedError("S5.7")
+    c = ctx(runtime)
+    team_phase = s.dod_phase == "team"
+    last = s.dod_transcript[-1] if s.dod_transcript else None
+    agreed = "\n".join(f"{i.id} [{i.level}] {i.statement}" for i in s.dod_team + s.dod_additions) \
+        or "(none yet)"
+    dynamic = "\n\n".join([
+        TEAM_SESSION if team_phase else ADDITIONS_SESSION + "\n\nIntake log:\n" + log_view(s),
+        f"Items agreed so far:\n{agreed}",
+        ("Checker problems (fix these):\n- " + "\n- ".join(s.dod_agenda))
+        if s.dod_agenda else "Checker problems: none.",
+        (f"Last question: {last.question}\nRecommendation: {last.recommended}\n"
+         f"Answer ({last.user}): {last.answer}" if last else "First turn."),
+    ])
+    turn = c.run(A.DOD, dynamic, s)
+    items, retired = apply_dod_turn(s.dod_team if team_phase else s.dod_additions,
+                                    s.dod_retired, turn, additions=not team_phase)
+    update = {("dod_team" if team_phase else "dod_additions"): items,
+              "dod_retired": retired, "challenge": turn.challenge, "dod_agenda": [],
+              "stage": "Definition of Done",
+              "dod_pending": None if turn.done else turn.next_question}
+    if not turn.done:
+        return update
+    problems = dod_rules.team_problems(items) if team_phase else dod_rules.draft_problems(items)
+    if problems:
+        return update | {"dod_agenda": problems}
+    if team_phase:
+        c.save_team_dod(items, by=s.dod_transcript[-1].user if s.dod_transcript else s.pm)
+        md.dod(items, c.settings.artifacts_dir / "definition-of-done.md",
+               f"Definition of Done — {c.settings.team_name}")
+        return update | {"dod_phase": "additions", "dod_transcript": []}
+    name = md.dod(items, c.folder(s) / "dod-additions.md", f"DoD additions — {s.title}") if items else ""
+    return update | {"dod_phase": "done", "dod_transcript": [], "files": files(s, name)}
 
 
 def dod_ask(s: AssayState):
@@ -59,7 +90,14 @@ def dod_ask(s: AssayState):
        answer=text, user=user)], "dod_pending": None}`.
        Expected outcome: the answer is recorded with who gave it.
     """
-    raise NotImplementedError("S5.7")
+    q = s.dod_pending
+    text, user = reply(interrupt({"kind": "dod_question", "challenge": s.challenge,
+                                  "question": q.text, "recommended": q.recommended_answer,
+                                  "reason": q.reason}))
+    return {"dod_transcript": s.dod_transcript + [Turn(question=q.text,
+                                                       recommended=q.recommended_answer,
+                                                       answer=text, user=user)],
+            "dod_pending": None}
 
 
 def after_dod(s: AssayState) -> str:
@@ -70,4 +108,8 @@ def after_dod(s: AssayState) -> str:
        otherwise `"dod_think"`.
        Expected outcome: checker problems and the team-to-additions switch both loop to dod_think.
     """
-    raise NotImplementedError("S5.7")
+    if s.dod_pending:
+        return "dod_ask"
+    if s.dod_phase == "done":
+        return "intake_gate_node"
+    return "dod_think"

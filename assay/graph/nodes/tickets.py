@@ -28,7 +28,15 @@ def tickets(s: AssayState, runtime: Runtime[AppContext]):
     4. Task: Return `{"tickets": assign_tickets(plan), "uncovered": plan.uncovered, "ticket_feedback": "", "stage": "Tickets"}`.
        Expected outcome: code-assigned IDs T-001…; the review pause comes next.
     """
-    raise NotImplementedError("S5.10")
+    dod = "\n".join(f"{i.id} [{i.level}] {i.statement}" for i in s.dod_team + s.dod_additions)
+    dynamic = "\n\n".join([
+        prd_brief(s),
+        f"Spec (sections keyed by name):\n{s.spec.model_dump_json(indent=1)}",
+        f"Definition of Done (attached automatically; do not repeat it in criteria):\n{dod}",
+    ] + ([f"Reviewer feedback to address:\n{s.ticket_feedback}"] if s.ticket_feedback else []))
+    plan = ctx(runtime).run(A.TICKETS, dynamic, s)
+    return {"tickets": assign_tickets(plan), "uncovered": plan.uncovered,
+            "ticket_feedback": "", "stage": "Tickets"}
 
 
 def ticket_review_ask(s: AssayState):
@@ -45,7 +53,14 @@ def ticket_review_ask(s: AssayState):
        `{"ticket_feedback": "" if approved else (text or "Revise the tickets.")}`.
        Expected outcome: changes re-cut the tickets.
     """
-    raise NotImplementedError("S5.10")
+    value = interrupt({"kind": "ticket_review",
+                       "tickets": [t.model_dump(include={"id", "title", "feature_id",
+                                                        "type", "size", "depends_on_ids"})
+                                   for t in s.tickets],
+                       "uncovered": [u.model_dump() for u in s.uncovered]})
+    text, _ = reply(value)
+    approved = isinstance(value, dict) and value.get("decision") == "approve"
+    return {"ticket_feedback": "" if approved else (text or "Revise the tickets.")}
 
 
 def after_ticket_review(s: AssayState) -> str:
@@ -55,7 +70,7 @@ def after_ticket_review(s: AssayState) -> str:
     1. Task: Return `"tickets" if s.ticket_feedback else "export_tickets"`.
        Expected outcome: nothing is exported unreviewed.
     """
-    raise NotImplementedError("S5.10")
+    return "tickets" if s.ticket_feedback else "export_tickets"
 
 
 def export_tickets(s: AssayState, runtime: Runtime[AppContext]):
@@ -69,4 +84,5 @@ def export_tickets(s: AssayState, runtime: Runtime[AppContext]):
     2. Task: Return `{"stage": "Done", "files": files(s, *names)}`.
        Expected outcome: the session is finished; downloads are available.
     """
-    raise NotImplementedError("S5.10")
+    names = md.tickets(s, ctx(runtime).folder(s))
+    return {"stage": "Done", "files": files(s, *names)}

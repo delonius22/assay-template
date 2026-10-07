@@ -205,6 +205,11 @@ class StoryDraft(BaseModel):
     text: str = Field(description="As a <actor>, I want <goal>, so that <benefit>.")
     features: list[FeatureDraft] = Field(min_length=1)
 
+    @property
+    def feature_ids(self) -> list[str]:
+        """Feature IDs belonging to this story (spec S6.5 CSV helper view)."""
+        return [f.id for f in self.features]
+
     @field_validator("text")
     @classmethod
     def _shape(cls, v: str) -> str:
@@ -218,6 +223,11 @@ class Requirement(BaseModel):
     priority: MoSCoW
     feature_id: str
     sources: list[str] = Field(min_length=1, description="Session log or questionnaire IDs")
+
+    @property
+    def feature_ids(self) -> list[str]:
+        """Feature IDs this requirement covers (spec S6.5 CSV helper view)."""
+        return [self.feature_id]
 
 
 class NFR(BaseModel):
@@ -361,3 +371,8 @@ class Ticket(TicketDraft):
     id: str
     depends_on_ids: list[str] = Field(default_factory=list)
     unblocks_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def features(self) -> list[str]:
+        """Feature IDs this ticket delivers (spec S6.6 prompt helper view)."""
+        return [self.feature_id]

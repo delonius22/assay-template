@@ -15,4 +15,7 @@ def user_from(request: Request, header: str, dev_user: str) -> str:
     3. Task: Return `user`.
        Expected outcome: recorded on every answer and approval.
     """
-    raise NotImplementedError("S8.1")
+    user = request.headers.get(header, "").strip() or dev_user
+    if not user:
+        raise HTTPException(401, f"Not signed in: missing {header} header from the SSO proxy.")
+    return user

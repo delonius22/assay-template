@@ -1,6 +1,7 @@
 """The scaffold installs, imports, compiles, and runs before anything is built."""
 import importlib
 import pkgutil
+import pytest
 import re
 import subprocess
 import sys
@@ -9,7 +10,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import assay
-from assay.api.app import create_app
+from assay.api.app import Services, create_app, ready
 from assay.cli import build_progress
 from assay.graph.build import build_graph
 from tests.support.fakes import make_settings
@@ -40,6 +41,12 @@ def test_every_stub_names_a_real_spec_id():
 
 def test_server_runs_and_names_what_to_build(tmp_path):
     with TestClient(create_app(make_settings(tmp_path))) as c:
+        # The scaffold boots; with persistence built (SQLite), the API is live.
         assert c.get("/").status_code == 200
         r = c.get("/api/me")
-        assert r.status_code == 501 and re.search(r"S\d+\.\d+", r.json()["detail"])
+        assert r.status_code == 200 and "user" in r.json()
+    # The not-yet-built guard still names a real spec ID, so any future unbuilt
+    # layer fails loudly instead of returning empty state.
+    svc = Services(settings=make_settings(tmp_path))
+    with pytest.raises(NotImplementedError, match=r"S\d+\.\d+"):
+        ready(svc)

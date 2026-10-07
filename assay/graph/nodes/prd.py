@@ -33,7 +33,24 @@ def prd(s: AssayState, runtime: Runtime[AppContext]):
        "prd_feedback": "", "stage": "PRD review", "files": files(s, *names)}`.
        Expected outcome: the review pause comes next.
     """
-    raise NotImplementedError("S5.8")
+    c = ctx(runtime)
+    dynamic = "\n\n".join([
+        f"Initiative: {s.title}",
+        f"Brief: {s.brief.model_dump_json(indent=2) if s.brief else 'none'}",
+        f"Session log (cite these IDs):\n{log_view(s)}",
+        f"Questionnaire IDs you may also cite: {s.q_ids or 'none'}",
+        f"Glossary:\n{glossary_text(s)}",
+    ] + ([f"Reviewer feedback to address:\n{s.prd_feedback}"] if s.prd_feedback else []))
+    core = c.run(A.PRD_CORE, dynamic, s)
+    nar = c.run(A.PRD_NARRATIVE, dynamic + "\n\nStories, features, and requirements already written:\n"
+               + core.model_dump_json(), s)
+    fr, nfr = requirement_ids(core)
+    doc_id = s.doc_id or f"PRD-{date.today().year}-{s.slug.upper()[:16]}"
+    s2 = s.model_copy(update={"prd_core": core, "prd_narrative": nar, "fr_ids": fr,
+                              "nfr_ids": nfr, "doc_id": doc_id})
+    names = md.prd(s2, c.folder(s))
+    return {"prd_core": core, "prd_narrative": nar, "fr_ids": fr, "nfr_ids": nfr, "doc_id": doc_id,
+            "prd_feedback": "", "stage": "PRD review", "files": files(s, *names)}
 
 
 def prd_review_ask(s: AssayState, runtime: Runtime[AppContext]):
@@ -54,7 +71,18 @@ def prd_review_ask(s: AssayState, runtime: Runtime[AppContext]):
        "prd_version": f"{major}.{int(minor) + 1}", "review_error": "", "approved_by": ""}`.
        Expected outcome: changes produce version 0.2, 0.3, ….
     """
-    raise NotImplementedError("S5.8")
+    approvers = ctx(runtime).settings.approvers
+    value = interrupt({"kind": "approval", "version": s.prd_version,
+                       "files": ["prd.pdf", "prd.md"], "error": s.review_error or None})
+    text, user = reply(value)
+    decision = value.get("decision") if isinstance(value, dict) else "changes"
+    if decision == "approve":
+        if approvers and user not in approvers:
+            return {"review_error": f"{user} is not an approver. Approvers: {', '.join(sorted(approvers))}."}
+        return {"approved_by": user, "review_error": "", "prd_feedback": ""}
+    major, minor = s.prd_version.split(".")
+    return {"prd_feedback": text or "Revise the PRD.",
+            "prd_version": f"{major}.{int(minor) + 1}", "review_error": "", "approved_by": ""}
 
 
 def after_review(s: AssayState) -> str:
@@ -64,7 +92,11 @@ def after_review(s: AssayState) -> str:
     1. Task: Return `"prd_review_ask"` when `s.review_error`; `"prd"` when `s.prd_feedback`; otherwise `"stamp_approval"`.
        Expected outcome: refused approval asks again; changes rewrite; approval stamps.
     """
-    raise NotImplementedError("S5.8")
+    if s.review_error:
+        return "prd_review_ask"
+    if s.prd_feedback:
+        return "prd"
+    return "stamp_approval"
 
 
 def stamp_approval(s: AssayState, runtime: Runtime[AppContext]):
@@ -78,4 +110,5 @@ def stamp_approval(s: AssayState, runtime: Runtime[AppContext]):
     2. Task: Return `{"stage": "Spec", "files": files(s, *names)}`.
        Expected outcome: the spec stage starts.
     """
-    raise NotImplementedError("S5.8")
+    names = md.prd(s, ctx(runtime).folder(s))
+    return {"stage": "Spec", "files": files(s, *names)}

@@ -30,7 +30,13 @@ def setup(s: AssayState, runtime: Runtime[AppContext]):
     3. Task: `names = write_intake(s.model_copy(update=update), c)`; return `update | {"files": files(s, *names)}`.
        Expected outcome: intake.md exists from the first step.
     """
-    raise NotImplementedError("S5.3")
+    c = ctx(runtime)
+    if s.mode == 3 and not s.brief:
+        raise ValueError("Mode 3 needs a brief with the ask, the why, and the outcome.")
+    team = c.team_dod()
+    update = {"dod_team": team, "dod_phase": "additions" if team else "team", "glossary": c.glossary()}
+    names = write_intake(s.model_copy(update=update), c)
+    return update | {"files": files(s, *names)}
 
 
 def route_mode(s: AssayState) -> str:
@@ -40,7 +46,7 @@ def route_mode(s: AssayState) -> str:
     1. Task: Return `{1: "grill_think", 2: "explore", 3: "brief_check"}[s.mode]`.
        Expected outcome: the node that starts this mode.
     """
-    raise NotImplementedError("S5.3")
+    return {1: "grill_think", 2: "explore", 3: "brief_check"}[s.mode]
 
 
 def grill_think(s: AssayState, runtime: Runtime[AppContext]):
@@ -69,7 +75,29 @@ def grill_think(s: AssayState, runtime: Runtime[AppContext]):
        "pending": None if turn.done else turn.next_question}`.
        Expected outcome: no pending question means the agent thinks intake is done.
     """
-    raise NotImplementedError("S5.3")
+    c = ctx(runtime)
+    last = s.transcript[-1] if s.transcript else None
+    dynamic = "\n\n".join([
+        f"Initiative: {s.title} (mode {s.mode})",
+        f"Brief: {s.brief.model_dump_json() if s.brief else 'none'}",
+        f"Current-state map: {s.current_map.model_dump_json() if s.current_map else 'n/a'}",
+        f"Glossary:\n{glossary_text(s)}",
+        f"Session log so far:\n{log_view(s)}",
+        ("Gaps the gate found (work through these first):\n- " + "\n- ".join(s.agenda))
+        if s.agenda else "Gate gaps: none reported yet.",
+        (f"Last question: {last.question}\nRecommendation: {last.recommended}\n"
+         f"Answer ({last.user}): {last.answer}" if last
+         else "This is the first turn. Start with the most foundational question."),
+    ])
+    turn = c.run(A.GRILL[s.mode], dynamic, s)
+    if turn.glossary_updates:
+        c.save_terms(turn.glossary_updates)
+    terms = {t.term: t for t in s.glossary} | {t.term: t for t in turn.glossary_updates}
+    update = {"log": add_entries(s.log, turn.recorded, turn.supersedes),
+              "glossary": list(terms.values())}
+    names = write_intake(s.model_copy(update=update), c)
+    return update | {"challenge": turn.challenge, "files": files(s, *names),
+                     "pending": None if turn.done else turn.next_question}
 
 
 def grill_ask(s: AssayState):
@@ -85,7 +113,13 @@ def grill_ask(s: AssayState):
        answer=text, user=user)], "pending": None}`.
        Expected outcome: the answer is recorded with who gave it and when.
     """
-    raise NotImplementedError("S5.3")
+    q = s.pending
+    text, user = reply(interrupt({"kind": "question", "challenge": s.challenge, "area": q.area,
+                                  "question": q.text, "recommended": q.recommended_answer,
+                                  "reason": q.reason}))
+    return {"transcript": s.transcript + [Turn(question=q.text, recommended=q.recommended_answer,
+                                               answer=text, user=user)],
+            "pending": None}
 
 
 def after_grill(s: AssayState) -> str:
@@ -95,7 +129,7 @@ def after_grill(s: AssayState) -> str:
     1. Task: Return `"grill_ask" if s.pending else "intake_gate_node"`.
        Expected outcome: ask while there is a question; otherwise check the gate.
     """
-    raise NotImplementedError("S5.3")
+    return "grill_ask" if s.pending else "intake_gate_node"
 
 
 # ------------------------------------------------------------------ mode 2 (S5.4)
@@ -111,7 +145,10 @@ def explore(s: AssayState, runtime: Runtime[AppContext]):
     2. Task: Return `{"current_map": ctx(runtime).run(A.EXPLORE, dynamic, s)}`.
        Expected outcome: a map built from code the agent read.
     """
-    raise NotImplementedError("S5.4")
+    dynamic = (f"Change requested: {s.title}\n\nDescription and evidence:\n"
+               + (s.brief.model_dump_json(indent=2) if s.brief else "none given")
+               + f"\n\nGlossary:\n{glossary_text(s)}")
+    return {"current_map": ctx(runtime).run(A.EXPLORE, dynamic, s)}
 
 
 def confirm_map_ask(s: AssayState):
@@ -128,7 +165,12 @@ def confirm_map_ask(s: AssayState):
        area="Delivery", detail=text, source=f"{user}, map review")` and return `{"log": add_entries(s.log, [corr])}`.
        Expected outcome: corrections are on the record.
     """
-    raise NotImplementedError("S5.4")
+    text, user = reply(interrupt({"kind": "map_review", "map": s.current_map.model_dump()}))
+    if text.lower() in ("ok", "yes", "correct", ""):
+        return {}
+    corr = NewEntry(type="C", title="Developer corrections to the current-state map", area="Delivery",
+                    detail=text, source=f"{user}, map review")
+    return {"log": add_entries(s.log, [corr])}
 
 
 # ------------------------------------------------------------------ mode 3 (S5.5)
@@ -141,7 +183,8 @@ def brief_check(s: AssayState, runtime: Runtime[AppContext]):
     2. Task: Return `{"brief_issues": [] if crit.ready else crit.issues}`.
        Expected outcome: issues route to the fix pause.
     """
-    raise NotImplementedError("S5.5")
+    crit = ctx(runtime).run(A.BRIEF, s.brief.model_dump_json(indent=2), s)
+    return {"brief_issues": [] if crit.ready else crit.issues}
 
 
 def after_brief(s: AssayState) -> str:
@@ -151,7 +194,7 @@ def after_brief(s: AssayState) -> str:
     1. Task: Return `"brief_fix_ask" if s.brief_issues else "write_questionnaire"`.
        Expected outcome: a weak brief never reaches developers.
     """
-    raise NotImplementedError("S5.5")
+    return "brief_fix_ask" if s.brief_issues else "write_questionnaire"
 
 
 def brief_fix_ask(s: AssayState):
@@ -164,7 +207,10 @@ def brief_fix_ask(s: AssayState):
        `{"brief": Brief(**brief) if brief else s.brief, "brief_issues": []}`.
        Expected outcome: the edited brief is validated by its model.
     """
-    raise NotImplementedError("S5.5")
+    value = interrupt({"kind": "brief_fix", "issues": s.brief_issues,
+                       "brief": s.brief.model_dump()})
+    brief = value.get("brief") if isinstance(value, dict) else None
+    return {"brief": Brief(**brief) if brief else s.brief, "brief_issues": []}
 
 
 def write_questionnaire(s: AssayState, runtime: Runtime[AppContext]):
@@ -179,7 +225,12 @@ def write_questionnaire(s: AssayState, runtime: Runtime[AppContext]):
     3. Task: Return `{"questionnaire": q, "q_round": 1, "q_ids": s2.q_ids, "files": files(s, name)}`.
        Expected outcome: the web form serves these IDs.
     """
-    raise NotImplementedError("S5.5")
+    c = ctx(runtime)
+    q: Questionnaire = c.run(A.QUESTIONNAIRE,
+                             f"Brief:\n{s.brief.model_dump_json(indent=2)}\n\nGlossary:\n{glossary_text(s)}", s)
+    s2 = s.model_copy(update={"questionnaire": q, "q_round": 1, "q_ids": all_answerable_ids(q, 1)})
+    name = md.questionnaire(s2, c.folder(s), f"/q/{s.slug}")
+    return {"questionnaire": q, "q_round": 1, "q_ids": s2.q_ids, "files": files(s, name)}
 
 
 def await_answers_ask(s: AssayState):
@@ -192,7 +243,9 @@ def await_answers_ask(s: AssayState):
     2. Task: Return `{"agenda": []}`.
        Expected outcome: the "no responses" note is cleared on resume.
     """
-    raise NotImplementedError("S5.5")
+    interrupt({"kind": "await_answers", "round": s.q_round, "form": f"/q/{s.slug}",
+               "note": s.agenda[0] if s.agenda else ""})
+    return {"agenda": []}
 
 
 def read_responses(s: AssayState, runtime: Runtime[AppContext]):
@@ -207,7 +260,12 @@ def read_responses(s: AssayState, runtime: Runtime[AppContext]):
     3. Task: Return `{"responses": s.responses + new, "new_responses": new, "agenda": []}`.
        Expected outcome: round two never re-reconciles round one.
     """
-    raise NotImplementedError("S5.5")
+    sheets = ctx(runtime).responses(s.slug, s.q_round)
+    seen = {(r.respondent, r.round) for r in s.responses}
+    new = [r for r in sheets if (r.respondent, r.round) not in seen]
+    if not new:
+        return {"agenda": ["No new responses yet. Share the form link with the developers."]}
+    return {"responses": s.responses + new, "new_responses": new, "agenda": []}
 
 
 def after_read(s: AssayState) -> str:
@@ -217,7 +275,7 @@ def after_read(s: AssayState) -> str:
     1. Task: Return `"await_answers_ask" if s.agenda else "reconcile"`.
        Expected outcome: no responses, keep waiting.
     """
-    raise NotImplementedError("S5.5")
+    return "await_answers_ask" if s.agenda else "reconcile"
 
 
 def reconcile(s: AssayState, runtime: Runtime[AppContext]):
@@ -243,7 +301,28 @@ def reconcile(s: AssayState, runtime: Runtime[AppContext]):
     4. Task: Otherwise return `update | {"agenda": rec.blocking_gaps + rec.contradictions}`.
        Expected outcome: remaining gaps go to the PM live; more than eight means the brief was not ready.
     """
-    raise NotImplementedError("S5.5")
+    c = ctx(runtime)
+    dynamic = "\n\n".join([
+        s.brief.model_dump_json(indent=2),
+        f"Questionnaire round {s.q_round} (IDs {s.q_ids})\n"
+        + s.questionnaire.model_dump_json(indent=1),
+        "Already recorded (do not repeat):\n" + log_view(s),
+        "New responses:\n" + json.dumps([r.model_dump() for r in s.new_responses], indent=1),
+        "Use questionnaire IDs (Q-01, K-01) and the respondent's name in each entry's source.",
+    ])
+    rec = c.run(A.RECONCILE, dynamic, s)
+    update = {"log": add_entries(s.log, rec.recorded), "reconcile_gaps": rec.blocking_gaps}
+    write_intake(s.model_copy(update=update), c)
+    if rec.blocking_gaps and s.q_round == 1 and 0 < len(rec.follow_up_questions) <= 8 \
+            and len(rec.blocking_gaps) <= 8:
+        fq = Questionnaire(summary="Follow-up on blocking gaps only.",
+                           questions=rec.follow_up_questions)
+        name = md.questionnaire(s.model_copy(update={"questionnaire": fq, "q_round": 2}),
+                                c.folder(s), f"/q/{s.slug}")
+        return update | {"questionnaire": fq, "q_round": 2,
+                         "q_ids": s.q_ids + all_answerable_ids(fq, 2),
+                         "files": files(s, name), "agenda": []}
+    return update | {"agenda": rec.blocking_gaps + rec.contradictions}
 
 
 def after_reconcile(s: AssayState) -> str:
@@ -254,7 +333,9 @@ def after_reconcile(s: AssayState) -> str:
        otherwise `"intake_gate_node"`.
        Expected outcome: a fresh follow-up round waits for answers; everything else goes to the gate.
     """
-    raise NotImplementedError("S5.5")
+    if s.q_round == 2 and s.reconcile_gaps and not s.agenda:
+        return "await_answers_ask"
+    return "intake_gate_node"
 
 
 # ------------------------------------------------------------------ intake gate (S5.6)
@@ -272,7 +353,11 @@ def intake_gate_node(s: AssayState, runtime: Runtime[AppContext]):
     4. Task: Return `{"agenda": failed, "stage": stage, "files": files(s, *names)}`.
        Expected outcome: the router reads `agenda` and `stage` only.
     """
-    raise NotImplementedError("S5.6")
+    names = write_intake(s, ctx(runtime))
+    failed = gate_rules.failures(gate_rules.gate(s.log, s.dod_phase == "done"))
+    only_dod = bool(failed) and all(f.startswith("Team Definition of Done") for f in failed)
+    stage = "Definition of Done" if only_dod else ("PRD" if not failed else "Intake")
+    return {"agenda": failed, "stage": stage, "files": files(s, *names)}
 
 
 def after_gate(s: AssayState) -> str:
@@ -283,4 +368,8 @@ def after_gate(s: AssayState) -> str:
        otherwise `"grill_think"`.
        Expected outcome: a pure router; no I/O.
     """
-    raise NotImplementedError("S5.6")
+    if not s.agenda:
+        return "prd"
+    if s.stage == "Definition of Done":
+        return "dod_think"
+    return "grill_think"

@@ -139,7 +139,9 @@ class AssayState(BaseModel):
                  ID across all stories.
            Expected outcome: A PRD with features F-01 and F-02 returns both.
         """
-        raise NotImplementedError("S5.1: feature_ids")
+        if not self.prd_core:
+            return set()
+        return {feature.id for story in self.prd_core.stories for feature in story.features}
 
     def prd_ids(self) -> set[str]:
         """Return every FR and NFR ID.
@@ -160,7 +162,7 @@ class AssayState(BaseModel):
         1. Task: Return the union of the FR and NFR IDs.
            Expected outcome: FR-01 and NFR-01 are both included.
         """
-        raise NotImplementedError("S5.1: prd_ids")
+        return set(self.fr_ids) | set(self.nfr_ids)
 
     def known_ids(self) -> set[str]:
         """Return every ID a PRD may cite.
@@ -180,7 +182,7 @@ class AssayState(BaseModel):
            Think about: Why do superseded entries stay citable?
            Expected outcome: D-001 and Q-01 are both included.
         """
-        raise NotImplementedError("S5.1: known_ids")
+        return set(self.log_entries.keys()) | set(self.questionnaire_ids)
 
 
 def log_view(s: AssayState) -> str:
@@ -205,4 +207,18 @@ def log_view(s: AssayState) -> str:
     2. Task: Return '(empty)' when there are no live entries.
        Expected outcome: An empty log gives '(empty)'.
     """
-    raise NotImplementedError("S5.1: log_view")
+    lines = []
+    for entry in s.log_entries.values():
+        if entry.status == "live":
+            extras = []
+            if entry.scope:
+                extras.append(f"scope:{entry.scope}")
+            if entry.path:
+                extras.append(f"path:{entry.path}")
+            if entry.rollback:
+                extras.append("rollback")
+            if entry.metric:
+                extras.append(f"metric:{entry.metric}")
+            extras_str = "; ".join(extras)
+            lines.append(f"{entry.id} [{entry.area}] {entry.title}: {entry.detail} (source: {entry.source}; {extras_str})")
+    return "\n".join(lines) if lines else "(empty)"

@@ -6,8 +6,8 @@ Supported Markdown: front matter, #/##/### headings, paragraphs, "-" bullets,
 """
 import os
 import re
-
 from datetime import date
+from typing import TypedDict
 
 import yaml
 from reportlab.lib import colors
@@ -30,7 +30,18 @@ from reportlab.platypus.tableofcontents import TableOfContents
 # Accessibility (WCAG 2.1): white on primary red = 5.1:1 (passes AA).
 # White on gold = 1.5:1 (FAILS) — gold is used only for bars, rules, and as a
 # background behind dark text, never as text colour on white.
-BRAND = {
+class BrandColors(TypedDict):
+    name: str
+    primary: colors.Color
+    accent: colors.Color
+    rule: colors.Color
+    zebra: colors.Color
+    callout: colors.Color
+    text: colors.Color
+    muted: colors.Color
+
+
+BRAND: BrandColors = {
     "name": "Wells Fargo",
     "primary": colors.HexColor("#D71E28"),   # red: bars, table headers, headings
     "accent": colors.HexColor("#FFCD11"),    # gold: accent bars and rules only

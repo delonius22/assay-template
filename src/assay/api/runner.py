@@ -39,7 +39,7 @@ import logging
 import queue
 import threading
 from dataclasses import dataclass
-from typing import Literal
+from typing import Callable, Literal
 
 from langgraph.types import Command
 
@@ -61,6 +61,7 @@ class BusyError(Exception):
 
     Spec: S8.2 | Ticket: — | Traces to: —
     """
+    pass
 
 
 @dataclass(frozen=True)
@@ -100,299 +101,365 @@ class Runner:
     """
 
     def __init__(self, app: object, context: AppContext, background: bool = True) -> None:
-        """Hold the compiled graph and context; prepare locks, errors, and subscribers.
+      """Hold the compiled graph and context; prepare locks, errors, and subscribers.
 
-        Problem piece: C5: one runner per app.
+      Problem piece: C5: one runner per app.
 
-        Why it matters: Locks and subscribers must be shared by every request in the
-                        process, so they live on one object.
+      Why it matters: Locks and subscribers must be shared by every request in the
+                  process, so they live on one object.
 
-        What: Stores the graph, context, and background flag, and empty lock, error,
-              and subscriber tables guarded by one lock.
+      What: Stores the graph, context, and background flag, and empty lock, error,
+            and subscriber tables guarded by one lock.
 
-        Spec: S8.2 | Ticket: 02 | Traces to: I6
+      Spec: S8.2 | Ticket: 02 | Traces to: I6
 
-        Build steps:
-        1. Task: Store the graph, context, and background flag, and create empty
-                 tables for locks, errors, and subscribers plus one guard lock for
-                 creating entries.
-           Expected outcome: A new runner reports no session as running.
-        """
-        raise NotImplementedError("S8.2: __init__")
+      Build steps:
+      1. Task: Store the graph, context, and background flag, and create empty
+            tables for locks, errors, and subscribers plus one guard lock for
+            creating entries.
+      Expected outcome: A new runner reports no session as running.
+      """
+      self.app = app
+      self.context = context
+      self.background = background
+      self._guard = threading.Lock()
+      self._locks: dict[str, threading.Lock] = {}
+      self._errors: dict[str, str] = {}
+      self._subscribers: dict[str, list[Callable[[RunProgress], None]]] = {}
 
     @staticmethod
     def config(slug: str) -> dict[str, object]:
-        """Return the LangGraph config for one session.
+      """Return the LangGraph config for one session.
 
-        Problem piece: C5: a session is a LangGraph thread.
+      Problem piece: C5: a session is a LangGraph thread.
 
-        Why it matters: The slug is the thread ID everywhere; a high recursion limit
-                        allows long grill loops.
+      Why it matters: The slug is the thread ID everywhere; a high recursion limit
+                  allows long grill loops.
 
-        What: Thread ID set to the slug and a recursion limit of 500. Called as
-              config(slug: str) and returns dict[str, object].
+      What: Thread ID set to the slug and a recursion limit of 500. Called as
+            config(slug: str) and returns dict[str, object].
 
-        Spec: S8.2 | Ticket: 02 | Traces to: I6
+      Spec: S8.2 | Ticket: 02 | Traces to: I6
 
-        Build steps:
-        1. Task: Return a config whose thread ID is the slug and whose recursion
-                 limit is 500.
-           Expected outcome: The slug 'alerts' becomes thread 'alerts'.
-        """
-        raise NotImplementedError("S8.2: config")
+      Build steps:
+      1. Task: Return a config whose thread ID is the slug and whose recursion
+            limit is 500.
+      Expected outcome: The slug 'alerts' becomes thread 'alerts'.
+      """
+      return {"thread_id": slug, "recursion_limit": 500}
 
     def lock_for(self, slug: str) -> threading.Lock:
-        """Return the one lock for a session.
+      """Return the one lock for a session.
 
-        Problem piece: C5: one step at a time per session.
+      Problem piece: C5: one step at a time per session.
 
-        Why it matters: Creating locks without a guard could give two requests two
-                        different locks for one session.
+      Why it matters: Creating locks without a guard could give two requests two
+                  different locks for one session.
 
-        What: The session's lock, created under the guard on first use. Called as
-              lock_for(slug: str) and returns threading.Lock.
+      What: The session's lock, created under the guard on first use. Called as
+            lock_for(slug: str) and returns threading.Lock.
 
-        Spec: S8.2 | Ticket: 02 | Traces to: I6
+      Spec: S8.2 | Ticket: 02 | Traces to: I6
 
-        Build steps:
-        1. Task: Under the guard, return the session's lock, creating it on first
-                 use.
-           Expected outcome: Two calls for one slug return the same lock.
-        """
-        raise NotImplementedError("S8.2: lock_for")
+      Build steps:
+      1. Task: Under the guard, return the session's lock, creating it on first
+            use.
+      Expected outcome: Two calls for one slug return the same lock.
+      """
+      with self._guard:
+            if slug not in self._locks:
+                  self._locks[slug] = threading.Lock()
+            return self._locks[slug]
 
     def running(self, slug: str) -> bool:
-        """Return True while a session runs a step.
+      """Return True while a session runs a step.
 
-        Problem piece: C5: status shows work in progress.
+      Problem piece: C5: status shows work in progress.
 
-        Why it matters: The UI must show 'working' instead of offering actions that
-                        would be refused. The status endpoint and every reply check
-                        depend on it, so it must read the lock itself rather than a
-                        separate flag that could drift.
+      Why it matters: The UI must show 'working' instead of offering actions that
+                  would be refused. The status endpoint and every reply check
+                  depend on it, so it must read the lock itself rather than a
+                  separate flag that could drift.
 
-        What: True when the session's lock is held, meaning a step is running right
-              now; False otherwise.
+      What: True when the session's lock is held, meaning a step is running right
+            now; False otherwise.
 
-        Spec: S8.2 | Ticket: 02 | Traces to: I6
+      Spec: S8.2 | Ticket: 02 | Traces to: I6
 
-        Build steps:
-        1. Task: Report whether the session's lock is held.
-           Expected outcome: A session mid-step reports True.
-        """
-        raise NotImplementedError("S8.2: running")
+      Build steps:
+      1. Task: Report whether the session's lock is held.
+      Expected outcome: A session mid-step reports True.
+      """
+      return self.lock_for(slug).locked()
 
     def subscribe(self, slug: str) -> queue.Queue[RunProgress]:
-        """Return a new queue that receives a session's progress.
+      """Return a new queue that receives a session's progress.
 
-        Problem piece: C7: live clients follow a session.
+      Problem piece: C7: live clients follow a session.
 
-        Why it matters: Several clients may watch one session; each needs its own
-                        queue so no one steals another's events.
+      Why it matters: Several clients may watch one session; each needs its own
+                  queue so no one steals another's events.
 
-        What: A new queue registered for the session; every event published
-              afterwards is put on it until it unsubscribes.
+      What: A new queue registered for the session; every event published
+            afterwards is put on it until it unsubscribes.
 
-        Spec: S9.1 | Ticket: 12 | Traces to: I7
+      Spec: S9.1 | Ticket: 12 | Traces to: I7
 
-        Build steps:
-        1. Task: Create a queue, register it for the session under the guard, and
-                 return it.
-           Expected outcome: Two subscribers both receive the next event.
-        """
-        raise NotImplementedError("S9.1: subscribe")
+      Build steps:
+      1. Task: Create a queue, register it for the session under the guard, and
+            return it.
+      Expected outcome: Two subscribers both receive the next event.
+      """
+      q: queue.Queue[RunProgress] = queue.Queue()
+      with self._guard:
+            if slug not in self._subscribers:
+                  self._subscribers[slug] = []
+            self._subscribers[slug].append(q)
+      return q
 
     def unsubscribe(self, slug: str, q: queue.Queue[RunProgress]) -> None:
-        """Stop sending a session's progress to a queue.
+      """Stop sending a session's progress to a queue.
 
-        Problem piece: C7: no leaks after a client leaves.
+      Problem piece: C7: no leaks after a client leaves.
 
-        Why it matters: A closed stream's queue would otherwise grow forever.
-                        Streams close unpredictably when browsers navigate away, so
-                        removal must tolerate a queue that is already gone.
+      Why it matters: A closed stream's queue would otherwise grow forever.
+                  Streams close unpredictably when browsers navigate away, so
+                  removal must tolerate a queue that is already gone.
 
-        What: Removes the queue from the session's subscribers if present. Called as
-              unsubscribe(slug: str, q: queue.Queue[RunProgress]) and returns None.
+      What: Removes the queue from the session's subscribers if present. Called as
+            unsubscribe(slug: str, q: queue.Queue[RunProgress]) and returns None.
 
-        Spec: S9.1 | Ticket: 12 | Traces to: I7
+      Spec: S9.1 | Ticket: 12 | Traces to: I7
 
-        Build steps:
-        1. Task: Remove the queue from the session's subscribers under the guard,
-                 ignoring one already gone.
-           Expected outcome: Unsubscribing twice does not fail.
-        """
-        raise NotImplementedError("S9.1: unsubscribe")
+      Build steps:
+      1. Task: Remove the queue from the session's subscribers under the guard,
+            ignoring one already gone.
+      Expected outcome: Unsubscribing twice does not fail.
+      """
+      with self._guard:
+            if slug in self._subscribers and q in self._subscribers[slug]:
+                  self._subscribers[slug].remove(q)
 
     def publish(self, slug: str, event: RunProgress) -> None:
-        """Send one progress event to every subscriber of a session.
+      """Send one progress event to every subscriber of a session.
 
-        Problem piece: C7: every watcher sees every event.
+      Problem piece: C7: every watcher sees every event.
 
-        Why it matters: Progress is broadcast; a slow subscriber must never block
-                        the run. A run may have many watchers or none; the run's
-                        progress must never depend on whether anyone is listening.
+      Why it matters: Progress is broadcast; a slow subscriber must never block
+                  the run. A run may have many watchers or none; the run's
+                  progress must never depend on whether anyone is listening.
 
-        What: Puts the event on each subscriber queue without blocking. Called as
-              publish(slug: str, event: RunProgress) and returns None.
+      What: Puts the event on each subscriber queue without blocking. Called as
+            publish(slug: str, event: RunProgress) and returns None.
 
-        Spec: S9.1 | Ticket: 12 | Traces to: I7
+      Spec: S9.1 | Ticket: 12 | Traces to: I7
 
-        Build steps:
-        1. Task: Put the event on every current subscriber queue without waiting.
-           Think about: Why must publishing never block?
-           Expected outcome: A subscriber that never reads does not slow the run.
-        """
-        raise NotImplementedError("S9.1: publish")
+      Build steps:
+      1. Task: Put the event on every current subscriber queue without waiting.
+      Think about: Why must publishing never block?
+      Expected outcome: A subscriber that never reads does not slow the run.
+      """
+      with self._guard:
+            if slug in self._subscribers:
+                  for q in self._subscribers[slug]:
+                        try:
+                              q.put_nowait(event)
+                        except queue.Full:
+                              pass
+
 
     def run(self, slug: str, payload: object, lock: threading.Lock) -> None:
-        """Run the graph until it pauses or ends, publishing progress, and always release the lock.
+      """Run the graph until it pauses or ends, publishing progress, and always release the lock.
 
-        Problem piece: C5 and C7: a step runs to completion and everyone hears about
-                       it.
+      Problem piece: C5 and C7: a step runs to completion and everyone hears about
+                  it.
 
-        Why it matters: Streaming the run's tasks gives a start and finish per node,
-                        which is exactly what live clients show. The end must always
-                        be published and the lock always released, or a session
-                        hangs as 'working' forever.
+      Why it matters: Streaming the run's tasks gives a start and finish per node,
+                  which is exactly what live clients show. The end must always
+                  be published and the lock always released, or a session
+                  hangs as 'working' forever.
 
-        What: Streams the graph with the context, publishes step events and how the
-              run ended, records any error, and releases the lock.
+      What: Streams the graph with the context, publishes step events and how the
+            run ended, records any error, and releases the lock.
 
-        Spec: S8.2, S9.1 | Ticket: 02, 12 | Traces to: I6, I7
+      Spec: S8.2, S9.1 | Ticket: 02, 12 | Traces to: I6, I7
 
-        Build steps:
-        1. Task: Stream the graph with this payload, the session config, and the
-                 context, in LangGraph's 'tasks' stream mode, which reports each
-                 node when it starts and again with its result.
-           Think about: Why does the context need passing on every run, including
-                        resumes?
-           Expected outcome: Every node produces one start and one finish.
-        2. Task: Publish step_started for a start report and step_finished for a
-                 result report, noting whether any result carried an interrupt.
-           Expected outcome: A grill turn publishes start then finish.
-        3. Task: Publish 'ended' with outcome 'pause' when an interrupt occurred,
-                 else 'finish'; on an exception, log it, record '<ErrorType>:
-                 <message>' as the session's error, and publish 'ended' with outcome
-                 'error'.
-           Expected outcome: A failing step publishes ended with outcome error.
-        4. Task: Release the lock whatever happened.
-           Expected outcome: A failed step leaves the session not running.
-        """
-        raise NotImplementedError("S8.2: run")
+      Build steps:
+      1. Task: Stream the graph with this payload, the session config, and the
+            context, in LangGraph's 'tasks' stream mode, which reports each
+            node when it starts and again with its result.
+      Think about: Why does the context need passing on every run, including
+                  resumes?
+      Expected outcome: Every node produces one start and one finish.
+      2. Task: Publish step_started for a start report and step_finished for a
+            result report, noting whether any result carried an interrupt.
+      Expected outcome: A grill turn publishes start then finish.
+      3. Task: Publish 'ended' with outcome 'pause' when an interrupt occurred,
+            else 'finish'; on an exception, log it, record '<ErrorType>:
+            <message>' as the session's error, and publish 'ended' with outcome
+            'error'.
+      Expected outcome: A failing step publishes ended with outcome error.
+      4. Task: Release the lock whatever happened.
+      Expected outcome: A failed step leaves the session not run ning.
+      """
+      outcome: Literal["pause", "finish", "error"] = "finish"
+      error: str | None = None
+      interrupted = False
+      try:
+            for event in self.app.stream(
+                  payload,
+                  config=self.config(slug),
+                  context=self.context,
+                  stream_mode="tasks",
+            ):
+                  node = event.get("name", "")
+                  if "input" in event:
+                        self.publish(slug, RunProgress(kind="step_started", node=node))
+                  if "result" in event:
+                        result = event["result"]
+                        if isinstance(result, dict) and result.get("__interrupt__"):
+                              interrupted = True
+                        if event.get("__interrupt__"):
+                              interrupted = True
+                        self.publish(slug, RunProgress(kind="step_finished", node=node))
+            if interrupted:
+                  outcome = "pause"
+      except Exception as exc:
+            outcome = "error"
+            error = f"{type(exc).__name__}: {exc}"
+            log.exception("Run failed for session %s", slug)
+            with self._guard:
+                  self._errors[slug] = error
+      finally:
+            try:
+                  self.publish(
+                        slug,
+                        RunProgress(kind="ended", outcome=outcome, error=error),
+                  )
+            finally:
+                  lock.release()
 
     def submit(self, slug: str, payload: object) -> None:
-        """Start a run for a session, in the background or inline.
+      """Start a run for a session, in the background or inline.
 
-        Problem piece: C5: one step at a time, off the request path.
+      Problem piece: C5: one step at a time, off the request path.
 
-        Why it matters: Tests run inline for determinism; the server runs in a
-                        background thread so requests return at once.
+      Why it matters: Tests run inline for determinism; the server runs in a
+                  background thread so requests return at once.
 
-        What: Takes the lock without waiting (BusyError when held), clears the last
-              error, and runs in a thread or inline.
+      What: Takes the lock without waiting (BusyError when held), clears the last
+            error, and runs in a thread or inline.
 
-        Spec: S8.2 | Ticket: 02 | Traces to: I6
+      Spec: S8.2 | Ticket: 02 | Traces to: I6
 
-        Raises:
-            BusyError: the session is already running.
+      Raises:
+      BusyError: the session is already running.
 
-        Build steps:
-        1. Task: Take the session's lock without waiting, raising BusyError when it
-                 is held, and clear its last error.
-           Expected outcome: A second submit during a run raises BusyError.
-        2. Task: Run in a background daemon thread when background mode is on,
-                 otherwise inline.
-           Expected outcome: In inline mode the run has finished when submit
-                             returns.
-        """
-        raise NotImplementedError("S8.2: submit")
+      Build steps:
+      1. Task: Take the session's lock without waiting, raising BusyError when it
+            is held, and clear its last error.
+      Expected outcome: A second submit during a run raises BusyError.
+      2. Task: Run in a background daemon thread when background mode is on,
+            otherwise inline.
+      Expected outcome: In inline mode the run has finished when submit
+                        returns.
+      """
+      self._lock.acquire(blocking=False)
+      self._errors[slug] = None
+      if self._background:
+            thread = threading.Thread(target=self._run, args=(slug, payload), daemon=True)
+            thread.start()
+      else:
+            self._run(slug, payload)
+
 
     def start(self, state: AssayState) -> None:
-        """Start a new session.
+      """Start a new session.
 
-        Problem piece: C5: a session begins at setup.
+      Problem piece: C5: a session begins at setup.
 
-        Why it matters: Starting is a run whose payload is the initial state.
-                        Routing starts through the same submit path as resumes means
-                        one lock and one error policy cover every way a run begins.
+      Why it matters: Starting is a run whose payload is the initial state.
+                  Routing starts through the same submit path as resumes means
+                  one lock and one error policy cover every way a run begins.
 
-        What: Submits the initial state under its slug, so the run begins at setup;
-              raises BusyError when already running.
+      What: Submits the initial state under its slug, so the run begins at setup;
+            raises BusyError when already running.
 
-        Spec: S8.2 | Ticket: 02 | Traces to: I6
+      Spec: S8.2 | Ticket: 02 | Traces to: I6
 
-        Build steps:
-        1. Task: Submit the state under its slug.
-           Expected outcome: A new session runs setup first.
-        """
-        raise NotImplementedError("S8.2: start")
+      Build steps:
+      1. Task: Submit the state under its slug.
+      Expected outcome: A new session runs setup first.
+      """
+      self.submit(state.slug, state)
+
 
     def resume(self, slug: str, value: dict[str, object]) -> None:
-        """Resume a paused session with a reply.
+      """Resume a paused session with a reply.
 
-        Problem piece: C5 and C6: a person's reply continues the run.
+      Problem piece: C5 and C6: a person's reply continues the run.
 
-        Why it matters: The paused node receives the value through LangGraph's
-                        resume command. A reply delivered any other way would bypass
-                        the paused node and leave the checkpoint waiting forever.
+      Why it matters: The paused node receives the value through LangGraph's
+                  resume command. A reply delivered any other way would bypass
+                  the paused node and leave the checkpoint waiting forever.
 
-        What: Submits a resume command carrying the value. Called as resume(slug:
-              str, value: dict[str, object]) and returns None.
+      What: Submits a resume command carrying the value. Called as resume(slug:
+            str, value: dict[str, object]) and returns None.
 
-        Spec: S8.2 | Ticket: 02 | Traces to: I6
+      Spec: S8.2 | Ticket: 02 | Traces to: I6
 
-        Build steps:
-        1. Task: Submit a resume command carrying the value.
-           Expected outcome: The paused node receives the reply.
-        """
-        raise NotImplementedError("S8.2: resume")
+      Build steps:
+      1. Task: Submit a resume command carrying the value.
+      Expected outcome: The paused node receives the reply.
+      """
+      self.submit(slug, {"resume": value})
 
     def retry(self, slug: str) -> None:
-        """Continue from the last saved step.
+      """Continue from the last saved step.
 
-        Problem piece: C5: recover after an error or restart.
+      Problem piece: C5: recover after an error or restart.
 
-        Why it matters: Invoking with no input continues from the last checkpoint,
-                        so nothing completed is redone. Re-running from scratch
-                        would repeat model calls that already succeeded and could
-                        record their entries twice.
+      Why it matters: Invoking with no input continues from the last checkpoint,
+                  so nothing completed is redone. Re-running from scratch
+                  would repeat model calls that already succeeded and could
+                  record their entries twice.
 
-        What: Submits an empty payload, which continues from the last saved step;
-              raises BusyError when a step is already running.
+      What: Submits an empty payload, which continues from the last saved step;
+            raises BusyError when a step is already running.
 
-        Spec: S8.2 | Ticket: 02 | Traces to: I6
+      Spec: S8.2 | Ticket: 02 | Traces to: I6
 
-        Build steps:
-        1. Task: Submit with no payload.
-           Expected outcome: After a failed step, retry continues from the last
-                             saved step.
-        """
-        raise NotImplementedError("S8.2: retry")
+      Build steps:
+      1. Task: Submit with no payload.
+      Expected outcome: After a failed step, retry continues from the last
+                        saved step.
+      """
+      self.submit(slug, {})
 
     def status(self, slug: str) -> dict[str, object]:
-        """Return a session's status from its checkpoint.
+      """Return a session's status from its checkpoint.
 
-        Problem piece: C5: status survives restarts.
+      Problem piece: C5: status survives restarts.
 
-        Why it matters: Status read from the checkpoint is true after a restart;
-                        status kept only in memory would not be.
+      Why it matters: Status read from the checkpoint is true after a restart;
+                  status kept only in memory would not be.
 
-        What: Status (missing, working, error, waiting, stopped, done), the pending
-              pause, error, stage, title, mode, PM, files, agenda, and round.
+      What: Status (missing, working, error, waiting, stopped, done), the pending
+            pause, error, stage, title, mode, PM, files, agenda, and round.
 
-        Spec: S8.2 | Ticket: 02 | Traces to: I6
+      Spec: S8.2 | Ticket: 02 | Traces to: I6
 
-        Build steps:
-        1. Task: Read the saved values and any pending interrupt values from the
-                 session's checkpoint.
-           Expected outcome: A paused session reports its pause.
-        2. Task: Choose the status in order: missing (no values), working, error,
-                 waiting (a pending pause), stopped (next steps but no pause),
-                 otherwise done.
-           Think about: Why does 'stopped' exist?
-           Expected outcome: A session interrupted by a restart reports stopped.
-        3. Task: Return the status with the first pending pause, error, stage,
-                 title, mode, PM, files, agenda, and questionnaire round.
-           Expected outcome: The JSON includes files for downloads.
-        """
-        raise NotImplementedError("S8.2: status")
+      Build steps:
+      1. Task: Read the saved values and any pending interrupt values from the
+            session's checkpoint.
+      Expected outcome: A paused session reports its pause.
+      2. Task: Choose the status in order: missing (no values), working, error,
+            waiting (a pending pause), stopped (next steps but no pause),
+            otherwise done.
+      Think about: Why does 'stopped' exist?
+      Expected outcome: A session interrupted by a restart reports stopped.
+      3. Task: Return the status with the first pending pause, error, stage,
+            title, mode, PM, files, agenda, and questionnaire round.
+      Expected outcome: The JSON includes files for downloads.
+      """
+      return self._read_status(slug)

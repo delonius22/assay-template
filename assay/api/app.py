@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..domain.ids import question_ids
@@ -25,8 +25,12 @@ from ..graph.context import AppContext
 from ..graph.state import AssayState
 from ..settings import Settings, load_settings, missing_config
 from ..store.persistence import Persistence, open_persistence
+from .agui import check_service_call, encode_stream, run_events
 from .auth import user_from
 from .runner import Busy, Runner
+
+from ag_ui.core import RunAgentInput
+from ag_ui.encoder import EventEncoder
 
 STATIC = Path(__file__).resolve().parent / "static"
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{2,39}$")
@@ -98,7 +102,9 @@ def handle_list(svc: Services) -> list[dict]:
        key=lambda r: r.get("created_at", ""), reverse=True)`.
        Expected outcome: newest first, each with live status.
     """
-    raise NotImplementedError("S8.3")
+    items = svc.persistence.store.search(("sessions",), limit=500)
+    return sorted([{**i.value, **ready(svc).status(i.key)} for i in items],
+                  key=lambda r: r.get("created_at", ""), reverse=True)
 
 
 def handle_create(svc: Services, body: NewSession, user: str) -> dict:
@@ -115,7 +121,17 @@ def handle_create(svc: Services, body: NewSession, user: str) -> dict:
        brief=body.brief, created_by=user))`; return `ready(svc).status(body.slug)`.
        Expected outcome: the first step runs; the UI polls status.
     """
-    raise NotImplementedError("S8.3")
+    if not SLUG.match(body.slug):
+        raise HTTPException(422, "Slug: 3 to 40 lowercase letters, digits, or hyphens.")
+    if svc.persistence.store.get(("sessions",), body.slug):
+        raise HTTPException(409, f"Session '{body.slug}' already exists.")
+    if body.mode == 3 and not body.brief:
+        raise HTTPException(422, "Mode 3 needs the ask, the why, and the outcome.")
+    svc.persistence.store.put(("sessions",), body.slug,
+                             {"title": body.title, "created_by": user, "created_at": now()})
+    ready(svc).start(AssayState(slug=body.slug, title=body.title, pm=body.pm or user, mode=body.mode,
+                                brief=body.brief, created_by=user))
+    return ready(svc).status(body.slug)
 
 
 def handle_get(svc: Services, slug: str) -> dict:
@@ -127,7 +143,10 @@ def handle_get(svc: Services, slug: str) -> dict:
     2. Task: Return `st`.
        Expected outcome: status, pending pause, files.
     """
-    raise NotImplementedError("S8.3")
+    st = ready(svc).status(slug)
+    if st["status"] == "missing":
+        raise HTTPException(404, f"No session '{slug}'.")
+    return st
 
 
 def handle_reply(svc: Services, slug: str, body: Reply, user: str) -> dict:
@@ -145,7 +164,19 @@ def handle_reply(svc: Services, slug: str, body: Reply, user: str) -> dict:
        mapping `Busy` to `HTTPException(409, "This session is already working on a step.")`; return `ready(svc).status(slug)`.
        Expected outcome: the resume value contract in SPECS ## Data shapes.
     """
-    raise NotImplementedError("S8.3")
+    st = ready(svc).status(slug)
+    if st["status"] != "waiting":
+        raise HTTPException(409, f"Session is {st['status']}, not waiting for an answer.")
+    if st["pending"]["kind"] == "approval" and body.decision == "approve" and svc.settings.approvers and \
+       user not in svc.settings.approvers:
+        raise HTTPException(403, "Only a named approver can approve the PRD.")
+    value = {"text": body.text, "user": user, "decision": body.decision,
+             "brief": body.brief.model_dump() if body.brief else None}
+    try:
+        ready(svc).resume(slug, value)
+    except Busy:
+        raise HTTPException(409, "This session is already working on a step.") from None
+    return ready(svc).status(slug)
 
 
 def handle_retry(svc: Services, slug: str) -> dict:
@@ -157,7 +188,11 @@ def handle_retry(svc: Services, slug: str) -> dict:
     2. Task: Return `ready(svc).status(slug)`.
        Expected outcome: the UI shows working.
     """
-    raise NotImplementedError("S8.3")
+    try:
+        ready(svc).retry(slug)
+    except Busy:
+        raise HTTPException(409, "This session is already working on a step.") from None
+    return ready(svc).status(slug)
 
 
 # ------------------------------------------------------------------ handlers (S8.4)
@@ -174,7 +209,15 @@ def handle_questionnaire(svc: Services, slug: str) -> dict:
        "confirmations": [{"id": f"K-{i:02d}", **c.model_dump()} for i, c in enumerate(q.confirmations, 1)] if rnd == 1 else []}`.
        Expected outcome: the form the developer page renders.
     """
-    raise NotImplementedError("S8.4")
+    v = values(svc, slug)
+    q, rnd = v.get("questionnaire"), v.get("q_round", 0)
+    if not q:
+        raise HTTPException(404, "This session has no questionnaire.")
+    ids = question_ids(q, rnd)
+    return {"title": v["title"], "round": rnd, "brief": v.get("brief"),
+            "questions": [{"id": qid, **item.model_dump(), "follow_ups": [{"id": f"{qid}{chr(97 + j)}", **f.model_dump()}
+                for j, f in enumerate(item.follow_ups)]} for qid, item in zip(ids, q.questions)],
+            "confirmations": [{"id": f"K-{i:02d}", **c.model_dump()} for i, c in enumerate(q.confirmations, 1)] if rnd == 1 else []}
 
 
 def handle_submit(svc: Services, slug: str, body: Responses, user: str) -> dict:
@@ -192,7 +235,15 @@ def handle_submit(svc: Services, slug: str, body: Responses, user: str) -> dict:
        return `{"saved": True, "round": rnd, "respondent": user}`.
        Expected outcome: one record per developer per round; resubmitting replaces it.
     """
-    raise NotImplementedError("S8.4")
+    v = values(svc, slug)
+    rnd, valid = v.get("q_round", 0), set(v.get("q_ids", []))
+    if not rnd:
+        raise HTTPException(409, "No questionnaire is open for this session.")
+    if bad := [a.question_id for a in body.answers if a.question_id not in valid]:
+        raise HTTPException(422, f"Unknown question IDs: {bad}")
+    sheet = ResponseSheet(respondent=user, role=body.role, round=rnd, answers=body.answers, comments=body.comments)
+    svc.persistence.store.put(("responses", slug, f"r{rnd}"), user, sheet.model_dump())
+    return {"saved": True, "round": rnd, "respondent": user}
 
 
 def handle_responses(svc: Services, slug: str) -> list[dict]:
@@ -204,7 +255,9 @@ def handle_responses(svc: Services, slug: str) -> list[dict]:
     2. Task: Return `[{"respondent": i.value["respondent"], "role": i.value["role"], "submitted_at": i.value["submitted_at"]} for i in items]`.
        Expected outcome: who answered, never what (the PM sees content in the log).
     """
-    raise NotImplementedError("S8.4")
+    v = values(svc, slug)
+    items = svc.persistence.store.search(("responses", slug, f"r{v.get('q_round', 0)}"), limit=500)
+    return [{"respondent": i.value["respondent"], "role": i.value["role"], "submitted_at": i.value["submitted_at"]} for i in items]
 
 
 # ------------------------------------------------------------------ handlers (S8.5)
@@ -221,7 +274,13 @@ def handle_download(svc: Services, slug: str, name: str) -> FileResponse:
     3. Task: Return `FileResponse(path, filename=f"{slug}-{name}")`.
        Expected outcome: a named download.
     """
-    raise NotImplementedError("S8.5")
+    v = values(svc, slug)
+    if name not in v.get("files", []):
+        raise HTTPException(404, f"'{name}' is not a file of this session.")
+    path = svc.settings.artifacts_dir / "initiatives" / slug / name
+    if not path.exists():
+        raise HTTPException(404, f"'{name}' has not been generated.")
+    return FileResponse(path, filename=f"{slug}-{name}")
 
 
 def handle_usage(svc: Services, slug: str) -> dict:
@@ -237,7 +296,12 @@ def handle_usage(svc: Services, slug: str) -> dict:
     3. Task: Return `{"total": total, "calls": sorted(calls, key=lambda c: c["started_at"])}`.
        Expected outcome: totals plus the call log.
     """
-    raise NotImplementedError("S8.5")
+    calls = [i.value for i in svc.persistence.store.search(("calls", slug), limit=10_000)]
+    total = {k: sum(c.get(k, 0) for c in calls) for k in ("input_tokens", "cache_read_tokens", "output_tokens",
+                                                          "rejections", "transient_retries")}
+    total["calls"] = len(calls)
+    total["cache_hit_rate"] = round(total["cache_read_tokens"] / total["input_tokens"], 3) if total["input_tokens"] else 0.0
+    return {"total": total, "calls": sorted(calls, key=lambda c: c["started_at"])}
 
 
 # ------------------------------------------------------------------ app factory (complete)
@@ -341,4 +405,18 @@ def create_app(settings: Settings | None = None, get_model=None, background: boo
         user(request)
         return handle_usage(svc, slug)
 
+    @api.post("/agui")
+    async def agui(request: Request, body: RunAgentInput):
+        try:
+            acting_user = check_service_call(request.headers, svc.settings)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        runner = ready(svc)
+        events = run_events(runner, svc.persistence.store, body, acting_user)
+        return StreamingResponse(
+            encode_stream(events, request.headers.get("accept")),
+            media_type=EventEncoder().get_content_type(),
+        )
+
+    api.state.services = svc
     return api

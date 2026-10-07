@@ -16,7 +16,9 @@ def reply(value) -> tuple[str, str]:
     2. Task: Otherwise return `(str(value).strip(), "unknown")`.
        Expected outcome: plain strings (tests, scripts) still work.
     """
-    raise NotImplementedError("S5.3")
+    if isinstance(value, dict):
+        return str(value.get("text", "")).strip(), str(value.get("user") or "unknown")
+    return str(value).strip(), "unknown"
 
 
 def write_intake(s: AssayState, c: AppContext) -> list[str]:
@@ -32,7 +34,10 @@ def write_intake(s: AssayState, c: AppContext) -> list[str]:
     3. Task: Return `names`.
        Expected outcome: callers add them to `files`.
     """
-    raise NotImplementedError("S6.1")
+    names = md.intake(s, c.folder(s))
+    if s.glossary:
+        md.glossary(s.glossary, c.settings.artifacts_dir, c.settings.team_name)
+    return names
 
 
 def files(s: AssayState, *names: str) -> list[str]:

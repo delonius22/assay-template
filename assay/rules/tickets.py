@@ -21,7 +21,7 @@ def plan_problems(plan: TicketPlan, feature_ids: set[str], prd_ids: set[str]) ->
          problems.append(w + "a spike needs a question and a timebox")
       if t.type == "Enabler" and not t.unblocks:
          problems.append(w + "an enabler must list the later tickets it unblocks")
-      if not t.requirements:
+      if t.type == "Ticket" and not t.requirements:
          problems.append(w + "trace at least one FR- or NFR- ID")
       if bad := [r for r in t.requirements if r not in prd_ids]:
          problems.append(w + f"requirements {bad} are not in the PRD")
@@ -41,7 +41,7 @@ def plan_problems(plan: TicketPlan, feature_ids: set[str], prd_ids: set[str]) ->
       if t.size == "L":
          problems.append(w + "size L is too large for one ticket; split it")
 
-   covered = {r for t in plan.tickets for r in t.requirements} | {u.id for u in plan.uncovered}
-   if missing := sorted(r for r in prd_ids if r not in covered):
-      problems.append(f"No ticket covers {missing}. Add tickets or list them in uncovered with a reason.")
-   return problems
+    covered = {r for t in plan.tickets for r in t.requirements} | {u.id for u in plan.uncovered}
+    if missing := sorted(r for r in prd_ids if r not in covered):
+        problems.append(f"No ticket covers {missing}. Add tickets or list them in uncovered with a reason.")
+    return problems

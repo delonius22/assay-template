@@ -29,6 +29,7 @@ class Settings:
     dev_user: str                       # development only: user when no SSO header is present
     approvers: frozenset[str]           # who may approve a PRD (empty = anyone)
     team_name: str
+    service_token: str
 
 
 def env(name: str, default: str = "") -> str:
@@ -56,6 +57,7 @@ def load_settings() -> Settings:
         user_header=env("ASSAY_USER_HEADER", "X-Forwarded-User"),
         dev_user=env("ASSAY_DEV_USER"),
         team_name=env("ASSAY_TEAM_NAME", "Delivery team"),
+        service_token=env("ASSAY_SERVICE_TOKEN"),
         database_url=env("ASSAY_DATABASE_URL"),
         gateway_url=env("ASSAY_GATEWAY_URL"),
         gateway_key=env("ASSAY_GATEWAY_KEY"),

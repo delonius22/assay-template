@@ -54,7 +54,11 @@ class AppContext:
         3. Task: Return `self.models_cache[role]`.
            Expected outcome: the role's model.
         """
-        raise NotImplementedError("S5.2")
+        if self.get_model:
+            return self.get_model(role)
+        if role not in self.models_cache:
+            self.models_cache[role] = make_model(self.settings.models[role], self.settings)
+        return self.models_cache[role]
 
     def deps(self, s: AssayState) -> Deps:
         """Per-call dependencies for tools and validators.
@@ -66,7 +70,8 @@ class AppContext:
            prd_ids=s.prd_ids, feature_ids=s.feature_ids)`.
            Expected outcome: validators see this session's IDs; tools see only allowed roots.
         """
-        raise NotImplementedError("S5.2")
+        return Deps(roots=roots_from(self.settings.code_roots), known_ids=s.known_ids(),
+                    prd_ids=s.prd_ids, feature_ids=s.feature_ids)
 
     def run(self, spec: AgentSpec, dynamic: str, s: AssayState) -> BaseModel:
         """Call an agent and record the call for audit and usage.
@@ -85,7 +90,13 @@ class AppContext:
         4. Task: Return `out`.
            Expected outcome: the node gets typed output.
         """
-        raise NotImplementedError("S5.2")
+        out, rec = call(self.model_for(spec.role), spec, dynamic, self.deps(s), self.limits,
+                        model_name=self.settings.models.get(spec.role, ""))
+        self.store.put(("calls", s.slug), uuid.uuid4().hex, {**rec.dict(), "stage": s.stage})
+        log.info("call %s/%s steps=%d in=%d cached=%d out=%d rejections=%d retries=%d",
+                 s.slug, spec.name, rec.steps, rec.input_tokens, rec.cache_read_tokens,
+                 rec.output_tokens, rec.rejections, rec.transient_retries)
+        return out
 
     def folder(self, s: AssayState) -> Path:
         """Spec: S5.2 | Ticket: 02 | Traces to: C1
@@ -94,7 +105,7 @@ class AppContext:
         1. Task: Return `self.settings.artifacts_dir / "initiatives" / s.slug`.
            Expected outcome: one folder per session for its files.
         """
-        raise NotImplementedError("S5.2")
+        return self.settings.artifacts_dir / "initiatives" / s.slug
 
     def team_dod(self) -> list[DodItem]:
         """The shared team Definition of Done, or [] when none is saved.
@@ -107,7 +118,8 @@ class AppContext:
         2. Task: Return `[DodItem(**d) for d in item.value["items"]] if item else []`.
            Expected outcome: typed items.
         """
-        raise NotImplementedError("S5.2")
+        item = self.store.get(("team", "dod"), "current")
+        return [DodItem(**d) for d in item.value["items"]] if item else []
 
     def save_team_dod(self, items: list[DodItem], by: str) -> None:
         """Spec: S5.2 | Ticket: 04 | Traces to: I6
@@ -116,7 +128,8 @@ class AppContext:
         1. Task: `self.store.put(("team", "dod"), "current", {"items": [i.model_dump() for i in items], "by": by})`.
            Expected outcome: every later session reads this standard.
         """
-        raise NotImplementedError("S5.2")
+        self.store.put(("team", "dod"), "current",
+                       {"items": [i.model_dump() for i in items], "by": by})
 
     def glossary(self) -> list[GlossaryTerm]:
         """Spec: S5.2 | Ticket: 02 | Traces to: C1
@@ -125,7 +138,7 @@ class AppContext:
         1. Task: Return `[GlossaryTerm(**i.value) for i in self.store.search(("team", "glossary"), limit=1000)]`.
            Expected outcome: the shared glossary.
         """
-        raise NotImplementedError("S5.2")
+        return [GlossaryTerm(**i.value) for i in self.store.search(("team", "glossary"), limit=1000)]
 
     def save_terms(self, terms: list[GlossaryTerm]) -> None:
         """Spec: S5.2 | Ticket: 02 | Traces to: C1
@@ -134,7 +147,8 @@ class AppContext:
         1. Task: For each `t`, `self.store.put(("team", "glossary"), t.term.lower(), t.model_dump())`.
            Expected outcome: one record per term; a re-definition replaces the old one.
         """
-        raise NotImplementedError("S5.2")
+        for t in terms:
+            self.store.put(("team", "glossary"), t.term.lower(), t.model_dump())
 
     def responses(self, slug: str, round_no: int) -> list[ResponseSheet]:
         """Spec: S5.2 | Ticket: 08 | Traces to: I12
@@ -145,7 +159,8 @@ class AppContext:
         2. Task: Return `[ResponseSheet(**i.value) for i in items]`.
            Expected outcome: typed, already-validated responses.
         """
-        raise NotImplementedError("S5.2")
+        items = self.store.search(("responses", slug, f"r{round_no}"), limit=500)
+        return [ResponseSheet(**i.value) for i in items]
 
 
 def ctx(runtime) -> AppContext:
@@ -162,4 +177,8 @@ def ctx(runtime) -> AppContext:
     3. Task: Return `c`.
        Expected outcome: nodes read settings, store, and models from it.
     """
-    raise NotImplementedError("S5.2")
+    c = getattr(runtime, "context", None)
+    if not isinstance(c, AppContext):
+        raise RuntimeError("No AppContext. Pass context=AppContext(...) on every invoke, including"
+                           " resumes; LangGraph does not checkpoint it.")
+    return c

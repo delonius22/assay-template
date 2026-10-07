@@ -191,3 +191,29 @@ PRD_NARRATIVE = AgentSpec("prd_narrative", "prd", static("prd.md", "style-guide.
 SEAMS = AgentSpec("seams", "spec", static("seams.md"), Seams, tools=True)
 SPEC = AgentSpec("spec", "spec", static("spec.md"), Spec, [v_spec], tools=True)
 TICKETS = AgentSpec("tickets", "tickets", static("tickets.md"), TicketPlan, [v_tickets])
+
+
+def agent(name: str, mode: int | None = None) -> AgentSpec:
+    """Return the AgentSpec for a named agent. (Spec: S4.6 | Ticket: 02 | Traces to: I1)
+
+    'grill' requires mode 1, 2, or 3; every other name is a plain lookup.
+    """
+    if name == "grill":
+        if mode not in (1, 2, 3):
+            raise KeyError("grill needs mode 1, 2, or 3")
+        return GRILL[mode]
+    table = {
+        "explore": EXPLORE,
+        "brief": BRIEF,
+        "questionnaire": QUESTIONNAIRE,
+        "reconcile": RECONCILE,
+        "dod": DOD,
+        "prd_core": PRD_CORE,
+        "prd_narrative": PRD_NARRATIVE,
+        "seams": SEAMS,
+        "spec": SPEC,
+        "tickets": TICKETS,
+    }
+    if name not in table:
+        raise KeyError(name)
+    return table[name]
